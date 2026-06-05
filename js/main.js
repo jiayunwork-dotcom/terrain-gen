@@ -6,6 +6,7 @@ import VegetationSystem from './vegetation.js';
 import AtmosphereSystem from './atmosphere.js';
 import HistoryManager from './history.js';
 import Exporter from './exporter.js';
+import TerrainLOD from './lod.js';
 
 class TerrainEditor {
     constructor() {
@@ -24,6 +25,7 @@ class TerrainEditor {
         this.mouse = new THREE.Vector2();
         
         this.terrain = null;
+        this.terrainLOD = null;
         this.water = null;
         this.vegetation = null;
         this.atmosphere = null;
@@ -47,6 +49,7 @@ class TerrainEditor {
     init() {
         this.setupScene();
         this.setupTerrain();
+        this.setupLOD();
         this.setupWater();
         this.setupVegetation();
         this.setupAtmosphere();
@@ -94,6 +97,12 @@ class TerrainEditor {
         this.scene.add(terrainMesh);
         
         this.history.pushState(this.terrain.cloneHeightMap());
+    }
+
+    setupLOD() {
+        this.terrainLOD = new TerrainLOD(this.terrain, this.terrainSize, this.terrainResolution);
+        const lodGroup = this.terrainLOD.generateBlocks();
+        this.scene.add(lodGroup);
     }
 
     setupWater() {
@@ -181,6 +190,7 @@ class TerrainEditor {
 
         document.getElementById('regenerate').addEventListener('click', () => {
             this.terrain.regenerate();
+            this.terrainLOD.updateAllHeights();
             this.history.clear();
             this.history.pushState(this.terrain.cloneHeightMap());
             
@@ -296,6 +306,7 @@ class TerrainEditor {
             this.atmosphere.update();
             this.updateFog();
             this.updateSunDirection();
+            this.updateWaterSkyColor();
         });
 
         this.setupSlider('fog-density', (val) => {
@@ -306,6 +317,16 @@ class TerrainEditor {
         this.setupSlider('sun-intensity', (val) => {
             this.atmosphere.params.sunIntensity = parseFloat(val);
             this.atmosphere.updateLighting();
+        });
+
+        document.getElementById('lod-enabled').addEventListener('change', (e) => {
+            this.terrainLOD.enabled = e.target.checked;
+            this.terrain.mesh.visible = !e.target.checked;
+        });
+
+        this.setupSlider('lod-distance', (val) => {
+            const dist = parseFloat(val);
+            this.terrainLOD.lodDistances = [dist * 0.5, dist, dist * 1.75, dist * 2.5];
         });
 
         document.getElementById('export-heightmap').addEventListener('click', () => {
@@ -353,7 +374,29 @@ class TerrainEditor {
         if (this.terrain.material) {
             this.terrain.material.uniforms.uSunDirection.value.copy(sunDir);
         }
+        this.terrainLOD.setSunDirection(sunDir);
         this.water.setSunDirection(sunDir);
+    }
+
+    updateWaterSkyColor() {
+        const time = this.atmosphere.params.time;
+        let skyColor = new THREE.Color(0x64b5f6);
+        let horizonColor = new THREE.Color(0x90caf9);
+        
+        if (time < 6 || time > 20) {
+            skyColor.setHex(0x1a237e);
+            horizonColor.setHex(0x283593);
+        } else if (time >= 6 && time < 8) {
+            const t = (time - 6) / 2;
+            skyColor.lerpColors(new THREE.Color(0xff8a65), new THREE.Color(0x64b5f6), t);
+            horizonColor.lerpColors(new THREE.Color(0xffab91), new THREE.Color(0x90caf9), t);
+        } else if (time >= 17 && time < 20) {
+            const t = (time - 17) / 3;
+            skyColor.lerpColors(new THREE.Color(0x64b5f6), new THREE.Color(0xff8a65), t);
+            horizonColor.lerpColors(new THREE.Color(0x90caf9), new THREE.Color(0xffab91), t);
+        }
+        
+        this.water.setSkyColor(skyColor, horizonColor);
     }
 
     onMouseMove(event) {
@@ -400,6 +443,8 @@ class TerrainEditor {
             this.controls.enabled = true;
             this.lastBrushPos = null;
             
+            this.terrainLOD.updateAllHeights();
+            
             if (this.vegetation.params.enabled) {
                 this.vegetation.removeFromScene(this.scene);
                 this.vegetation.generate();
@@ -419,7 +464,9 @@ class TerrainEditor {
 
     getTerrainMousePosition() {
         this.raycaster.setFromCamera(this.mouse, this.camera);
-        const intersects = this.raycaster.intersectObject(this.terrain.mesh);
+        
+        let targetMesh = this.terrainLOD.enabled ? this.terrainLOD.blockGroup : this.terrain.mesh;
+        const intersects = this.raycaster.intersectObject(targetMesh, true);
         
         if (intersects.length > 0) {
             return intersects[0].point;
@@ -493,6 +540,7 @@ class TerrainEditor {
         const state = this.history.undo();
         if (state) {
             this.terrain.restoreHeightMap(state);
+            this.terrainLOD.updateAllHeights();
         }
     }
 
@@ -500,6 +548,7 @@ class TerrainEditor {
         const state = this.history.redo();
         if (state) {
             this.terrain.restoreHeightMap(state);
+            this.terrainLOD.updateAllHeights();
         }
     }
 
@@ -507,6 +556,36 @@ class TerrainEditor {
         this.camera.aspect = this.viewport.clientWidth / this.viewport.clientHeight;
         this.camera.updateProjectionMatrix();
         this.renderer.setSize(this.viewport.clientWidth, this.viewport.clientHeight);
+    }
+
+    calculateGPUMemory() {
+        let totalBytes = 0;
+        
+        if (this.terrainLOD.enabled) {
+            totalBytes += this.terrainLOD.getMemoryUsage();
+        } else {
+            const geo = this.terrain.geometry;
+            if (geo) {
+                totalBytes += geo.attributes.position.array.byteLength;
+                totalBytes += geo.attributes.normal.array.byteLength;
+                totalBytes += geo.attributes.uv.array.byteLength;
+                totalBytes += geo.index.array.byteLength;
+            }
+        }
+        
+        totalBytes += this.water.getMemoryUsage();
+        totalBytes += this.vegetation.getMemoryUsage();
+        
+        const framebufferBytes = this.viewport.clientWidth * this.viewport.clientHeight * 4 * 4;
+        totalBytes += framebufferBytes;
+        
+        return totalBytes;
+    }
+
+    formatBytes(bytes) {
+        if (bytes < 1024) return bytes + ' B';
+        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+        return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
     }
 
     updatePerformanceStats(timestamp) {
@@ -518,12 +597,22 @@ class TerrainEditor {
             this.lastFpsUpdate = timestamp;
             
             document.getElementById('fps-value').textContent = this.currentFps;
-            document.getElementById('triangles-value').textContent = 
-                this.terrain.getTriangleCount().toLocaleString();
-            document.getElementById('vertices-value').textContent = 
-                this.terrain.getVertexCount().toLocaleString();
-            document.getElementById('vegetation-count-value').textContent = 
-                this.vegetation.getTotalCount().toLocaleString();
+            
+            let triangles, vertices;
+            if (this.terrainLOD.enabled) {
+                triangles = this.terrainLOD.getTriangleCount();
+                vertices = this.terrainLOD.getVertexCount();
+            } else {
+                triangles = this.terrain.getTriangleCount();
+                vertices = this.terrain.getVertexCount();
+            }
+            
+            document.getElementById('triangles-value').textContent = triangles.toLocaleString();
+            document.getElementById('vertices-value').textContent = vertices.toLocaleString();
+            document.getElementById('vegetation-count-value').textContent = this.vegetation.getTotalCount().toLocaleString();
+            
+            const gpuMemory = this.calculateGPUMemory();
+            document.getElementById('gpu-memory-value').textContent = this.formatBytes(gpuMemory);
         }
     }
 
@@ -535,10 +624,14 @@ class TerrainEditor {
         this.controls.update();
         
         this.water.update(time, this.camera);
+        this.vegetation.update(time);
         
         if (this.terrain.material) {
             this.terrain.material.uniforms.uTime.value = time;
         }
+        this.terrainLOD.updateTime(time);
+        
+        this.terrainLOD.update(this.camera);
         
         this.renderer.render(this.scene, this.camera);
         
