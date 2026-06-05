@@ -33,15 +33,64 @@ class SnapshotManager {
 
     createThumbnail(canvas) {
         try {
+            if (!canvas || canvas.width === 0 || canvas.height === 0) {
+                console.warn('Canvas is not ready for thumbnail');
+                return this.createFallbackThumbnail();
+            }
+            
             const offscreenCanvas = document.createElement('canvas');
             offscreenCanvas.width = THUMBNAIL_SIZE;
             offscreenCanvas.height = THUMBNAIL_SIZE;
             const ctx = offscreenCanvas.getContext('2d');
-            ctx.drawImage(canvas, 0, 0, THUMBNAIL_SIZE, THUMBNAIL_SIZE);
-            return offscreenCanvas.toDataURL('image/jpeg', 0.8);
+            
+            ctx.fillStyle = '#1a237e';
+            ctx.fillRect(0, 0, THUMBNAIL_SIZE, THUMBNAIL_SIZE);
+            
+            try {
+                ctx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, THUMBNAIL_SIZE, THUMBNAIL_SIZE);
+            } catch (drawError) {
+                console.warn('Could not draw image, using fallback:', drawError);
+                return this.createFallbackThumbnail();
+            }
+            
+            const dataUrl = offscreenCanvas.toDataURL('image/jpeg', 0.8);
+            
+            if (!dataUrl || dataUrl.length < 100) {
+                console.warn('Generated thumbnail is too small, using fallback');
+                return this.createFallbackThumbnail();
+            }
+            
+            return dataUrl;
         } catch (e) {
             console.error('Failed to create thumbnail:', e);
-            return null;
+            return this.createFallbackThumbnail();
+        }
+    }
+
+    createFallbackThumbnail() {
+        try {
+            const offscreenCanvas = document.createElement('canvas');
+            offscreenCanvas.width = THUMBNAIL_SIZE;
+            offscreenCanvas.height = THUMBNAIL_SIZE;
+            const ctx = offscreenCanvas.getContext('2d');
+            
+            const gradient = ctx.createLinearGradient(0, 0, 0, THUMBNAIL_SIZE);
+            gradient.addColorStop(0, '#4a90d9');
+            gradient.addColorStop(0.5, '#66bb6a');
+            gradient.addColorStop(1, '#8d6e63');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, THUMBNAIL_SIZE, THUMBNAIL_SIZE);
+            
+            ctx.fillStyle = 'rgba(255,255,255,0.8)';
+            ctx.font = 'bold 48px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('🏔️', THUMBNAIL_SIZE / 2, THUMBNAIL_SIZE / 2);
+            
+            return offscreenCanvas.toDataURL('image/jpeg', 0.8);
+        } catch (e) {
+            console.error('Failed to create fallback thumbnail:', e);
+            return 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
         }
     }
 

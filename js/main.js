@@ -121,6 +121,7 @@ class TerrainEditor {
 
     setupCompareScene() {
         this.compareScene = new THREE.Scene();
+        this.compareScene.background = new THREE.Color(0x87ceeb);
         
         this.compareCamera = new THREE.PerspectiveCamera(
             60,
@@ -128,8 +129,9 @@ class TerrainEditor {
             0.1,
             2000
         );
-        this.compareCamera.position.set(150, 120, 150);
-        this.compareCamera.lookAt(0, 0, 0);
+        this.compareCamera.position.copy(this.camera.position);
+        this.compareCamera.quaternion.copy(this.camera.quaternion);
+        this.compareCamera.updateMatrixWorld();
         
         this.rendererCompare = new THREE.WebGLRenderer({
             canvas: this.canvasCompare,
@@ -597,6 +599,16 @@ class TerrainEditor {
         if (!preset) return;
         
         this.presetManager.applyPreset(preset, this);
+        
+        this.terrain.updateTextureParams();
+        this.water.setVisible(this.water.params.enabled);
+        this.water.updateLevel();
+        this.vegetation.setVisible(this.vegetation.params.enabled);
+        this.atmosphere.update();
+        this.updateFog();
+        this.updateSunDirection();
+        this.updateWaterSkyColor();
+        
         this.syncUIWithParams();
         this.regenerateTerrain();
     }
@@ -707,8 +719,12 @@ class TerrainEditor {
             placeholder: '请输入快照名称',
             defaultValue: `快照 ${this.snapshotManager.getSnapshots().length + 1}`,
             onConfirm: (name) => {
-                this.snapshotManager.createSnapshot(this, name || undefined);
-                this.renderSnapshots();
+                this.renderer.render(this.scene, this.camera);
+                requestAnimationFrame(() => {
+                    this.renderer.render(this.scene, this.camera);
+                    this.snapshotManager.createSnapshot(this, name || undefined);
+                    this.renderSnapshots();
+                });
             }
         });
     }
@@ -801,13 +817,13 @@ class TerrainEditor {
         const terrainGenerator = new TerrainGenerator(this.terrainSize, this.terrainResolution);
         Object.assign(terrainGenerator.params, snapshot.params.terrainParams);
         Object.assign(terrainGenerator.textureParams, snapshot.params.textureParams);
-        const terrainMesh = terrainGenerator.createMesh();
         
         if (snapshot.heightMapData) {
             const heightMap = new Float32Array(snapshot.heightMapData);
-            terrainGenerator.restoreHeightMap(heightMap);
+            terrainGenerator.heightMap = heightMap;
         }
         
+        const terrainMesh = terrainGenerator.createMesh();
         this.compareScene.add(terrainMesh);
         this.compareTerrain = terrainGenerator;
         
@@ -1172,7 +1188,8 @@ class TerrainEditor {
         
         if (this.compareMode && this.compareCamera) {
             this.compareCamera.position.copy(this.camera.position);
-            this.compareCamera.rotation.copy(this.camera.rotation);
+            this.compareCamera.quaternion.copy(this.camera.quaternion);
+            this.compareCamera.updateProjectionMatrix();
             this.compareCamera.updateMatrixWorld();
         }
         
