@@ -390,11 +390,40 @@
             </div>
         </div>
         
-        <div id="viewport">
-            <canvas id="canvas"></canvas>
-            <canvas id="canvas-compare"></canvas>
-            <div id="brush-indicator"></div>
-            <div id="compare-divider" class="compare-divider" style="display:none;"></div>
+        <div id="main-content">
+            <div id="viewport">
+                <canvas id="canvas"></canvas>
+                <canvas id="canvas-compare"></canvas>
+                <div id="brush-indicator"></div>
+                <div id="compare-divider" class="compare-divider" style="display:none;"></div>
+            </div>
+            
+            <div id="splitter"></div>
+            
+            <div id="node-editor">
+                <div id="node-editor-toolbar">
+                    <span class="node-editor-title">🔗 节点编辑器</span>
+                    <div class="node-editor-controls">
+                        <button id="node-new" title="新建节点图">📄 新建</button>
+                        <button id="node-save" title="保存节点图">💾 保存</button>
+                        <button id="node-load" title="加载节点图">📂 加载</button>
+                        <button id="node-toggle" title="切换显示">🔽</button>
+                    </div>
+                </div>
+                <canvas id="node-canvas"></canvas>
+                <div id="node-menu" class="node-menu hidden">
+                    <div class="node-menu-title">选择节点类型</div>
+                    <div class="node-menu-items">
+                        <div class="node-menu-item" data-type="noise">🎲 噪声源</div>
+                        <div class="node-menu-item" data-type="math">➕ 数学运算</div>
+                        <div class="node-menu-item" data-type="constant">🔢 常数</div>
+                        <div class="node-menu-item" data-type="scale">📏 缩放/偏移</div>
+                        <div class="node-menu-item" data-type="blend">🎨 混合</div>
+                        <div class="node-menu-item" data-type="threshold">🚪 阈值</div>
+                        <div class="node-menu-item" data-type="output">📤 输出</div>
+                    </div>
+                </div>
+            </div>
         </div>
         
         <div id="statusbar">

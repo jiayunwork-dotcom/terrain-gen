@@ -10,6 +10,7 @@ import TerrainLOD from './lod.js';
 import PresetManager from './presets.js';
 import SnapshotManager from './snapshots.js';
 import MacroManager from './macros.js';
+import NodeEditor from './node-editor.js';
 
 class TerrainEditor {
     constructor() {
@@ -69,6 +70,12 @@ class TerrainEditor {
         this.compareLastFpsUpdate = 0;
         this.compareFps = 60;
         
+        this.nodeEditor = null;
+        this.splitter = null;
+        this.isSplitting = false;
+        this.splitStartY = 0;
+        this.splitStartHeight = 0;
+        
         this.init();
     }
 
@@ -83,6 +90,8 @@ class TerrainEditor {
         this.setupExporter();
         this.setupEventListeners();
         this.setupUI();
+        this.setupSplitter();
+        this.setupNodeEditor();
         
         this.renderPresets();
         this.renderSnapshots();
@@ -1832,6 +1841,74 @@ class TerrainEditor {
         }
     }
 
+    setupSplitter() {
+        this.splitter = document.getElementById('splitter');
+        const mainContent = document.getElementById('main-content');
+        const nodeEditor = document.getElementById('node-editor');
+        
+        let initialHeight = Math.max(200, window.innerHeight * 0.33);
+        nodeEditor.style.flex = '0 0 ' + initialHeight + 'px';
+        this.viewport.style.flex = '1 1 auto';
+        
+        this.splitter.addEventListener('mousedown', (e) => {
+            this.isSplitting = true;
+            this.splitStartY = e.clientY;
+            this.splitStartHeight = nodeEditor.offsetHeight;
+            this.splitter.classList.add('active');
+            document.body.style.cursor = 'ns-resize';
+            e.preventDefault();
+        });
+        
+        document.addEventListener('mousemove', (e) => {
+            if (!this.isSplitting) return;
+            
+            const deltaY = this.splitStartY - e.clientY;
+            let newHeight = this.splitStartHeight + deltaY;
+            
+            const minHeight = 100;
+            const maxHeight = mainContent.offsetHeight - 100;
+            newHeight = Math.max(minHeight, Math.min(maxHeight, newHeight));
+            
+            nodeEditor.style.flex = '0 0 ' + newHeight + 'px';
+            
+            setTimeout(() => {
+                this.onResize();
+                if (this.nodeEditor) {
+                    this.nodeEditor.resize();
+                }
+            }, 0);
+        });
+        
+        document.addEventListener('mouseup', () => {
+            if (this.isSplitting) {
+                this.isSplitting = false;
+                this.splitter.classList.remove('active');
+                document.body.style.cursor = '';
+            }
+        });
+    }
+    
+    setupNodeEditor() {
+        const nodeCanvas = document.getElementById('node-canvas');
+        if (nodeCanvas) {
+            this.nodeEditor = new NodeEditor(nodeCanvas);
+            this.nodeEditor.setTerrainGenerator(this.terrain);
+            
+            this.nodeEditor.graph.addChangeListener(() => {
+                this.terrainLOD.updateAllHeights();
+                if (this.vegetation.params.enabled) {
+                    this.vegetation.removeFromScene(this.scene);
+                    this.vegetation.generate();
+                    this.vegetation.addToScene(this.scene);
+                }
+            });
+            
+            setTimeout(() => {
+                this.nodeEditor.updateTerrain();
+            }, 100);
+        }
+    }
+
     onResize() {
         const width = this.viewport.clientWidth;
         const height = this.viewport.clientHeight;
@@ -1848,6 +1925,10 @@ class TerrainEditor {
             this.camera.aspect = width / height;
             this.camera.updateProjectionMatrix();
             this.renderer.setSize(width, height);
+        }
+        
+        if (this.nodeEditor) {
+            this.nodeEditor.resize();
         }
     }
 

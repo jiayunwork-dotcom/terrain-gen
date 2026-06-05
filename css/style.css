@@ -1012,11 +1012,278 @@ button:active {
     min-width: 24px;
 }
 
+#main-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    margin-left: 300px;
+    position: relative;
+}
+
+#viewport {
+    flex: 0 0 auto;
+    position: relative;
+    margin-left: 0;
+    min-height: 0;
+}
+
+#splitter {
+    height: 6px;
+    background: #16213e;
+    cursor: ns-resize;
+    border-top: 1px solid #0f3460;
+    border-bottom: 1px solid #0f3460;
+    transition: background 0.2s;
+    flex-shrink: 0;
+}
+
+#splitter:hover {
+    background: #e94560;
+}
+
+#splitter.active {
+    background: #e94560;
+}
+
+#node-editor {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background: #0a0a1a;
+    position: relative;
+    min-height: 0;
+    overflow: hidden;
+}
+
+#node-editor.collapsed {
+    flex: 0 0 40px;
+}
+
+#node-editor.collapsed #node-canvas,
+#node-editor.collapsed #node-menu {
+    display: none;
+}
+
+#node-editor-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    background: #16213e;
+    border-bottom: 1px solid #0f3460;
+    flex-shrink: 0;
+}
+
+.node-editor-title {
+    font-size: 14px;
+    font-weight: 500;
+    color: #e94560;
+}
+
+.node-editor-controls {
+    display: flex;
+    gap: 6px;
+}
+
+.node-editor-controls button {
+    padding: 4px 10px;
+    font-size: 11px;
+}
+
+#node-canvas {
+    flex: 1;
+    width: 100%;
+    height: 100%;
+    cursor: grab;
+}
+
+#node-canvas:active {
+    cursor: grabbing;
+}
+
+.node-menu {
+    position: absolute;
+    background: #16213e;
+    border: 1px solid #0f3460;
+    border-radius: 6px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+    z-index: 1000;
+    min-width: 180px;
+    overflow: hidden;
+}
+
+.node-menu.hidden {
+    display: none;
+}
+
+.node-menu-title {
+    padding: 8px 12px;
+    font-size: 12px;
+    color: #888;
+    border-bottom: 1px solid #0f3460;
+    background: #0f3460;
+}
+
+.node-menu-items {
+    padding: 4px;
+}
+
+.node-menu-item {
+    padding: 8px 12px;
+    font-size: 12px;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: background 0.15s;
+}
+
+.node-menu-item:hover {
+    background: #e94560;
+    color: #fff;
+}
+
+.node-input-field {
+    width: 60px;
+    padding: 2px 4px;
+    background: #0f3460;
+    border: 1px solid #16213e;
+    border-radius: 3px;
+    color: #eee;
+    font-size: 10px;
+    outline: none;
+}
+
+.node-input-field:focus {
+    border-color: #e94560;
+}
+
+.node-select-field {
+    width: 70px;
+    padding: 2px 4px;
+    background: #0f3460;
+    border: 1px solid #16213e;
+    border-radius: 3px;
+    color: #eee;
+    font-size: 10px;
+    outline: none;
+}
+
+.node-select-field:focus {
+    border-color: #e94560;
+}
+
+.save-load-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2000;
+}
+
+.save-load-modal.hidden {
+    display: none;
+}
+
+.save-load-content {
+    background: #16213e;
+    border: 1px solid #0f3460;
+    border-radius: 8px;
+    padding: 20px;
+    min-width: 350px;
+    max-width: 90%;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.save-load-header {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 15px;
+    color: #e94560;
+}
+
+.save-load-body {
+    flex: 1;
+    overflow-y: auto;
+    margin-bottom: 15px;
+}
+
+.save-load-input {
+    width: 100%;
+    padding: 8px 12px;
+    background: #0f3460;
+    border: 1px solid #16213e;
+    border-radius: 4px;
+    color: #eee;
+    font-size: 13px;
+    outline: none;
+    margin-bottom: 10px;
+}
+
+.save-load-input:focus {
+    border-color: #e94560;
+}
+
+.save-load-list {
+    max-height: 200px;
+    overflow-y: auto;
+    background: #0f3460;
+    border-radius: 4px;
+}
+
+.save-load-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    border-bottom: 1px solid #16213e;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.save-load-item:hover {
+    background: #1a2744;
+}
+
+.save-load-item:last-child {
+    border-bottom: none;
+}
+
+.save-load-item-name {
+    font-size: 13px;
+    flex: 1;
+}
+
+.save-load-item-actions {
+    display: flex;
+    gap: 6px;
+}
+
+.save-load-item-actions button {
+    padding: 2px 6px;
+    font-size: 10px;
+}
+
+.save-load-footer {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+}
+
 @media (max-width: 768px) {
     #toolbar {
         width: 100%;
         height: 50vh;
         position: relative;
+        margin-left: 0;
+    }
+    
+    #main-content {
         margin-left: 0;
     }
     
