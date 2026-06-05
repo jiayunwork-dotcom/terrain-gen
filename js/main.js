@@ -88,6 +88,7 @@ class TerrainEditor {
         this.renderSnapshots();
         this.setupLayers();
         this.setupMacros();
+        this.setupBatchExecution();
         this.renderLayers();
         this.renderMacros();
         
@@ -975,10 +976,14 @@ class TerrainEditor {
             
             const thumbnail = layer.generateThumbnail(36);
             
+            const maskThumbnail = layer.generateMaskThumbnail(32);
             item.innerHTML = `
                 <div class="layer-item-header">
                     <span class="drag-handle" style="cursor: grab; color: #888; margin-right: 4px;">⋮⋮</span>
-                    <img class="layer-thumbnail" src="${thumbnail}" alt="缩略图">
+                    <div class="layer-thumbnails">
+                        <img class="layer-thumbnail" src="${thumbnail}" alt="缩略图" title="高度图">
+                        <img class="layer-mask-thumbnail" src="${maskThumbnail}" alt="蒙版" title="蒙版 (红色通道)">
+                    </div>
                     <span class="layer-name" title="${layer.name}">${layer.name}</span>
                     <button class="layer-visibility-btn" title="${layer.visible ? '隐藏' : '显示'}">${layer.visible ? '👁️' : '👁️‍🗨️'}</button>
                     <button class="layer-lock-btn" title="${layer.locked ? '解锁' : '锁定'}">${layer.locked ? '🔒' : '🔓'}</button>
@@ -1243,8 +1248,277 @@ class TerrainEditor {
         this.macroManager.playMacro(macro, (brushType, normX, normZ, size, strength, flattenHeight) => {
             const worldX = (normX - 0.5) * this.terrainSize;
             const worldZ = (normZ - 0.5) * this.terrainSize;
-            this.terrain.applyBrush(worldX, worldZ, brushType, size, strength, flattenHeight);
+            if (brushType === 'mask_white' || brushType === 'mask_black') {
+                this.terrain.applyMaskBrush(worldX, worldZ, brushType, size, strength);
+            } else {
+                this.terrain.applyBrush(worldX, worldZ, brushType, size, strength, flattenHeight);
+            }
         });
+    }
+
+    setupBatchExecution() {
+        this.selectedBatchMacros = new Map();
+
+        document.getElementById('batch-execute').addEventListener('click', () => {
+            this.executeBatch();
+        });
+
+        document.getElementById('batch-pause').addEventListener('click', () => {
+            if (this.macroManager.isBatchPaused) {
+                this.macroManager.resumeBatch();
+            } else {
+                this.macroManager.pauseBatch();
+            }
+        });
+
+        document.getElementById('batch-cancel').addEventListener('click', () => {
+            this.macroManager.cancelBatch();
+        });
+
+        document.getElementById('batch-save-template').addEventListener('click', () => {
+            this.saveBatchTemplate();
+        });
+
+        this.macroManager.on('batchStarted', (data) => {
+            document.getElementById('batch-progress').style.display = 'block';
+            document.getElementById('batch-execute').disabled = true;
+            document.getElementById('batch-pause').disabled = false;
+            document.getElementById('batch-cancel').disabled = false;
+            document.getElementById('batch-progress-text').textContent = `0/${data.total}`;
+            document.getElementById('batch-progress-fill').style.width = '0%';
+        });
+
+        this.macroManager.on('batchItemStarted', (data) => {
+            document.getElementById('batch-progress-text').textContent = `${data.index + 1}/${data.total}`;
+            document.getElementById('batch-progress-fill').style.width = `${((data.index + 1) / data.total * 100}%`;
+        });
+
+        this.macroManager.on('batchPaused', () => {
+            document.getElementById('batch-pause').textContent = '▶️ 继续';
+        });
+
+        this.macroManager.on('batchResumed', () => {
+            document.getElementById('batch-pause').textContent = '⏸️ 暂停';
+        });
+
+        this.macroManager.on('batchFinished', () => {
+            document.getElementById('batch-execute').disabled = false;
+            document.getElementById('batch-pause').disabled = true;
+            document.getElementById('batch-cancel').disabled = true;
+            document.getElementById('batch-pause').textContent = '⏸️ 暂停';
+            this.brushIndicator.classList.remove('visible');
+        });
+
+        this.macroManager.on('batchCancelled', () => {
+            document.getElementById('batch-execute').disabled = false;
+            document.getElementById('batch-pause').disabled = true;
+            document.getElementById('batch-cancel').disabled = true;
+            document.getElementById('batch-pause').textContent = '⏸️ 暂停';
+            this.brushIndicator.classList.remove('visible');
+        });
+
+        this.renderBatchMacroList();
+        this.renderBatchTemplates();
+    }
+
+    renderBatchMacroList() {
+        const container = document.getElementById('batch-macro-checkboxes');
+        const macros = this.macroManager.getMacros();
+        container.innerHTML = '';
+
+        if (macros.length === 0) {
+            container.innerHTML = '<div class="empty-state" style="padding: 10px;">暂无宏</div>';
+            return;
+        }
+
+        macros.forEach(macro => {
+            const item = document.createElement('div');
+            item.className = 'batch-macro-checkbox-item';
+            const isChecked = this.selectedBatchMacros.has(macro.id);
+            
+            item.innerHTML = `
+                <input type="checkbox" id="batch-macro-${macro.id}" ${isChecked ? 'checked' : ''}>
+                <label for="batch-macro-${macro.id}">${macro.name}</label>
+            `;
+
+            const checkbox = item.querySelector('input');
+            checkbox.addEventListener('change', (e) => {
+                if (e.target.checked) {
+                    if (!this.selectedBatchMacros.has(macro.id)) {
+                        this.selectedBatchMacros.set(macro.id, {
+                            macroId: macro.id,
+                            offsetX: 0,
+                            offsetZ: 0,
+                            rotation: 0
+                        });
+                    }
+                } else {
+                    this.selectedBatchMacros.delete(macro.id);
+                }
+                this.renderBatchConfigTable();
+            });
+
+            container.appendChild(item);
+        });
+
+        this.renderBatchConfigTable();
+    }
+
+    renderBatchConfigTable() {
+        const container = document.getElementById('batch-config-table');
+        const items = Array.from(this.selectedBatchMacros.values());
+
+        if (items.length === 0) {
+            container.innerHTML = '<div class="empty-state" style="padding: 10px;">请先选择要执行的宏</div>';
+            return;
+        }
+
+        container.innerHTML = '';
+
+        items.forEach(item => {
+            const macro = this.macroManager.getMacro(item.macroId);
+            if (!macro) return;
+
+            const row = document.createElement('div');
+            row.className = 'batch-config-row';
+            row.innerHTML = `
+                <span class="config-name" title="${macro.name}">${macro.name}</span>
+                <input type="number" class="config-offsetx" value="${item.offsetX}" step="0.01" min="-0.5" max="0.5" title="X偏移">
+                <input type="number" class="config-offsetz" value="${item.offsetZ}" step="0.01" min="-0.5" max="0.5" title="Z偏移">
+                <input type="number" class="config-rotation" value="${item.rotation}" step="1" min="-180" max="180" title="旋转角度">
+            `;
+
+            row.querySelector('.config-offsetx').addEventListener('change', (e) => {
+                item.offsetX = parseFloat(e.target.value) || 0;
+            });
+
+            row.querySelector('.config-offsetz').addEventListener('change', (e) => {
+                item.offsetZ = parseFloat(e.target.value) || 0;
+            });
+
+            row.querySelector('.config-rotation').addEventListener('change', (e) => {
+                item.rotation = parseFloat(e.target.value) || 0;
+            });
+
+            container.appendChild(row);
+        });
+    }
+
+    executeBatch() {
+        const items = Array.from(this.selectedBatchMacros.values());
+        if (items.length === 0) {
+            alert('请先选择要执行的宏');
+            return;
+        }
+
+        this.history.pushState(this.terrain.cloneHeightMap());
+
+        this.macroManager.playBatch(items, (brushType, normX, normZ, size, strength, flattenHeight) => {
+            const worldX = (normX - 0.5) * this.terrainSize;
+            const worldZ = (normZ - 0.5) * this.terrainSize;
+            if (brushType === 'mask_white' || brushType === 'mask_black') {
+                this.terrain.applyMaskBrush(worldX, worldZ, brushType, size, strength);
+            } else {
+                this.terrain.applyBrush(worldX, worldZ, brushType, size, strength, flattenHeight);
+            }
+        });
+    }
+
+    saveBatchTemplate() {
+        const items = Array.from(this.selectedBatchMacros.values());
+        if (items.length === 0) {
+            alert('请先选择要保存的宏配置');
+            return;
+        }
+
+        this.showModal({
+            title: '保存批量模板',
+            placeholder: '请输入模板名称',
+            defaultValue: `批量模板 ${this.macroManager.getBatchTemplates().length + 1}`,
+            onConfirm: (name) => {
+                if (name && name.trim()) {
+                    this.macroManager.saveBatchTemplate(name.trim(), items);
+                    this.renderBatchTemplates();
+                }
+            }
+        });
+    }
+
+    renderBatchTemplates() {
+        const container = document.getElementById('batch-template-list');
+        const templates = this.macroManager.getBatchTemplates();
+        container.innerHTML = '';
+
+        if (templates.length === 0) {
+            container.innerHTML = '<div class="empty-state" style="padding: 10px;">暂无批量模板</div>';
+            return;
+        }
+
+        templates.forEach(template => {
+            const item = document.createElement('div');
+            item.className = 'batch-template-item';
+            item.innerHTML = `
+                <span class="batch-template-name" title="${template.name}">${template.name}</span>
+                <div class="batch-template-actions">
+                    <button data-action="load" title="加载">📂</button>
+                    <button data-action="rename" title="重命名">✏️</button>
+                    <button data-action="delete" title="删除">🗑️</button>
+                </div>
+            `;
+
+            item.addEventListener('click', (e) => {
+                if (e.target.tagName !== 'BUTTON') {
+                    this.loadBatchTemplate(template.id);
+                }
+            });
+
+            item.querySelector('[data-action="load"]').addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.loadBatchTemplate(template.id);
+            });
+
+            item.querySelector('[data-action="rename"]').addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.showModal({
+                    title: '重命名批量模板',
+                    placeholder: '请输入新名称',
+                    defaultValue: template.name,
+                    onConfirm: (name) => {
+                        if (name && name.trim()) {
+                            this.macroManager.renameBatchTemplate(template.id, name.trim());
+                            this.renderBatchTemplates();
+                        }
+                    }
+                });
+            });
+
+            item.querySelector('[data-action="delete"]').addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (confirm('确定要删除这个批量模板吗？')) {
+                    this.macroManager.deleteBatchTemplate(template.id);
+                    this.renderBatchTemplates();
+                }
+            });
+
+            container.appendChild(item);
+        });
+    }
+
+    loadBatchTemplate(templateId) {
+        const template = this.macroManager.getBatchTemplate(templateId);
+        if (!template) return;
+
+        this.selectedBatchMacros.clear();
+        template.items.forEach(item => {
+            this.selectedBatchMacros.set(item.macroId, {
+                macroId: item.macroId,
+                offsetX: item.offsetX || 0,
+                offsetZ: item.offsetZ || 0,
+                rotation: item.rotation || 0
+            });
+        });
+
+        this.renderBatchMacroList();
     }
 
     renderMacros() {
@@ -1342,6 +1616,10 @@ class TerrainEditor {
 
             container.appendChild(item);
         });
+
+        if (this.renderBatchMacroList) {
+            this.renderBatchMacroList();
+        }
     }
 
     onMouseMove(event) {
@@ -1442,14 +1720,25 @@ class TerrainEditor {
     }
 
     applyBrush(position) {
+        const isMaskBrush = this.currentBrush === 'mask_white' || this.currentBrush === 'mask_black';
+        
         if (!this.lastBrushPos) {
-            this.terrain.applyBrush(
-                position.x, position.z,
-                this.currentBrush,
-                this.brushSize,
-                this.brushStrength,
-                this.flattenHeight
-            );
+            if (isMaskBrush) {
+                this.terrain.applyMaskBrush(
+                    position.x, position.z,
+                    this.currentBrush,
+                    this.brushSize,
+                    this.brushStrength
+                );
+            } else {
+                this.terrain.applyBrush(
+                    position.x, position.z,
+                    this.currentBrush,
+                    this.brushSize,
+                    this.brushStrength,
+                    this.flattenHeight
+                );
+            }
             if (this.macroManager.isRecording) {
                 this.recordBrushOperation(
                     this.currentBrush,
@@ -1471,13 +1760,22 @@ class TerrainEditor {
                 const interpolatedPos = new THREE.Vector3().lerpVectors(
                     this.lastBrushPos, position, t
                 );
-                this.terrain.applyBrush(
-                    interpolatedPos.x, interpolatedPos.z,
-                    this.currentBrush,
-                    this.brushSize,
-                    this.brushStrength,
-                    this.flattenHeight
-                );
+                if (isMaskBrush) {
+                    this.terrain.applyMaskBrush(
+                        interpolatedPos.x, interpolatedPos.z,
+                        this.currentBrush,
+                        this.brushSize,
+                        this.brushStrength
+                    );
+                } else {
+                    this.terrain.applyBrush(
+                        interpolatedPos.x, interpolatedPos.z,
+                        this.currentBrush,
+                        this.brushSize,
+                        this.brushStrength,
+                        this.flattenHeight
+                    );
+                }
                 if (this.macroManager.isRecording) {
                     this.recordBrushOperation(
                         this.currentBrush,
@@ -1490,13 +1788,22 @@ class TerrainEditor {
             }
             this.lastBrushPos = position.clone();
         } else {
-            this.terrain.applyBrush(
-                position.x, position.z,
-                this.currentBrush,
-                this.brushSize,
-                this.brushStrength,
-                this.flattenHeight
-            );
+            if (isMaskBrush) {
+                this.terrain.applyMaskBrush(
+                    position.x, position.z,
+                    this.currentBrush,
+                    this.brushSize,
+                    this.brushStrength
+                );
+            } else {
+                this.terrain.applyBrush(
+                    position.x, position.z,
+                    this.currentBrush,
+                    this.brushSize,
+                    this.brushStrength,
+                    this.flattenHeight
+                );
+            }
             if (this.macroManager.isRecording) {
                 this.recordBrushOperation(
                     this.currentBrush,

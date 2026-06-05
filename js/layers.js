@@ -8,11 +8,13 @@ class TerrainLayer {
         this.blendMode = 'add';
         this.resolution = resolution;
         this.heightMap = new Float32Array(resolution * resolution);
+        this.mask = new Float32Array(resolution * resolution).fill(1.0);
     }
 
     clone() {
         const layer = new TerrainLayer(this.name + ' 副本', this.resolution);
         layer.heightMap = new Float32Array(this.heightMap);
+        layer.mask = new Float32Array(this.mask);
         layer.opacity = this.opacity;
         layer.blendMode = this.blendMode;
         return layer;
@@ -27,7 +29,8 @@ class TerrainLayer {
             opacity: this.opacity,
             blendMode: this.blendMode,
             resolution: this.resolution,
-            heightMap: Array.from(this.heightMap)
+            heightMap: Array.from(this.heightMap),
+            mask: Array.from(this.mask)
         };
     }
 
@@ -39,6 +42,7 @@ class TerrainLayer {
         layer.opacity = data.opacity;
         layer.blendMode = data.blendMode;
         layer.heightMap = new Float32Array(data.heightMap);
+        layer.mask = data.mask ? new Float32Array(data.mask) : new Float32Array(data.resolution * data.resolution).fill(1.0);
         return layer;
     }
 
@@ -66,6 +70,33 @@ class TerrainLayer {
                 imageData.data[pixelIdx] = gray;
                 imageData.data[pixelIdx + 1] = gray;
                 imageData.data[pixelIdx + 2] = gray;
+                imageData.data[pixelIdx + 3] = 255;
+            }
+        }
+
+        ctx.putImageData(imageData, 0, 0);
+        return canvas.toDataURL();
+    }
+
+    generateMaskThumbnail(size = 32) {
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        const imageData = ctx.createImageData(size, size);
+
+        const step = this.resolution / size;
+        for (let y = 0; y < size; y++) {
+            for (let x = 0; x < size; x++) {
+                const srcX = Math.floor(x * step);
+                const srcY = Math.floor(y * step);
+                const idx = Math.min(srcY * this.resolution + srcX, this.mask.length - 1);
+                const maskVal = this.mask[idx];
+                const gray = Math.floor(maskVal * 255);
+                const pixelIdx = (y * size + x) * 4;
+                imageData.data[pixelIdx] = gray;
+                imageData.data[pixelIdx + 1] = 0;
+                imageData.data[pixelIdx + 2] = 0;
                 imageData.data[pixelIdx + 3] = 255;
             }
         }
@@ -188,33 +219,33 @@ class LayerManager {
             return;
         }
 
-        const opacity = layer.opacity;
-        
         for (let i = 0; i < this.resolution * this.resolution; i++) {
             const baseHeight = baseMap[i];
             const layerHeight = layer.heightMap[i];
+            const maskVal = layer.mask[i];
+            const effectiveOpacity = layer.opacity * maskVal;
             
             let result;
             switch (layer.blendMode) {
                 case 'add':
-                    result = baseHeight + layerHeight * opacity;
+                    result = baseHeight + layerHeight * effectiveOpacity;
                     break;
                 case 'max':
-                    result = baseHeight * (1 - opacity) + Math.max(baseHeight, layerHeight) * opacity;
+                    result = baseHeight * (1 - effectiveOpacity) + Math.max(baseHeight, layerHeight) * effectiveOpacity;
                     break;
                 case 'min':
-                    result = baseHeight * (1 - opacity) + Math.min(baseHeight, layerHeight) * opacity;
+                    result = baseHeight * (1 - effectiveOpacity) + Math.min(baseHeight, layerHeight) * effectiveOpacity;
                     break;
                 case 'multiply':
                     const multiplyFactor = 1 + (layerHeight / 50);
-                    result = baseHeight * (1 - opacity) + (baseHeight * multiplyFactor) * opacity;
+                    result = baseHeight * (1 - effectiveOpacity) + (baseHeight * multiplyFactor) * effectiveOpacity;
                     break;
                 case 'difference':
                     const diff = Math.abs(baseHeight - layerHeight);
-                    result = baseHeight * (1 - opacity) + diff * opacity;
+                    result = baseHeight * (1 - effectiveOpacity) + diff * effectiveOpacity;
                     break;
                 default:
-                    result = baseHeight + layerHeight * opacity;
+                    result = baseHeight + layerHeight * effectiveOpacity;
             }
             
             resultMap[i] = result;
@@ -230,7 +261,8 @@ class LayerManager {
             if (i === 0) {
                 if (layer.visible) {
                     for (let j = 0; j < this.combinedHeightMap.length; j++) {
-                        this.combinedHeightMap[j] = layer.heightMap[j] * layer.opacity;
+                        const effectiveOpacity = layer.opacity * layer.mask[j];
+                        this.combinedHeightMap[j] = layer.heightMap[j] * effectiveOpacity;
                     }
                 }
             } else {

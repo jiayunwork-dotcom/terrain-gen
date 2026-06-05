@@ -17,9 +17,18 @@ class MacroManager {
             rotation: 0
         };
         
+        this.isBatchPlaying = false;
+        this.isBatchPaused = false;
+        this.batchItems = [];
+        this.batchCurrentIndex = 0;
+        this.batchCancelRequested = false;
+        
+        this.batchTemplates = [];
+        
         this.savedMacros = [];
         this._listeners = {};
         this._loadFromLocalStorage();
+        this._loadBatchTemplatesFromLocalStorage();
     }
 
     on(event, callback) {
@@ -249,6 +258,150 @@ class MacroManager {
         } catch (e) {
             console.error('加载宏失败:', e);
             this.savedMacros = [];
+        }
+    }
+
+    playBatch(batchItems, onApplyBrush) {
+        if (this.isPlaying || this.isRecording || batchItems.length === 0) return;
+        
+        this.batchItems = batchItems;
+        this.batchCurrentIndex = 0;
+        this.isBatchPlaying = true;
+        this.isBatchPaused = false;
+        this.batchCancelRequested = false;
+        
+        this._emit('batchStarted', { total: batchItems.length });
+        this._playNextBatchItem(onApplyBrush);
+    }
+
+    _playNextBatchItem(onApplyBrush) {
+        if (this.batchCancelRequested || this.batchCurrentIndex >= this.batchItems.length) {
+            this.isBatchPlaying = false;
+            this.isBatchPaused = false;
+            this._emit('batchFinished', { cancelled: this.batchCancelRequested });
+            return;
+        }
+        
+        if (this.isBatchPaused) {
+            setTimeout(() => this._playNextBatchItem(onApplyBrush), 50);
+            return;
+        }
+        
+        const item = this.batchItems[this.batchCurrentIndex];
+        const macro = this.getMacro(item.macroId);
+        
+        if (!macro) {
+            this.batchCurrentIndex++;
+            this._playNextBatchItem(onApplyBrush);
+            return;
+        }
+        
+        this.transform.offsetX = item.offsetX || 0;
+        this.transform.offsetZ = item.offsetZ || 0;
+        this.transform.rotation = item.rotation || 0;
+        
+        this._emit('batchItemStarted', {
+            index: this.batchCurrentIndex,
+            total: this.batchItems.length,
+            macro: macro
+        });
+        
+        this.playMacro(macro, onApplyBrush);
+        
+        const onSingleFinished = () => {
+            this.off('playbackFinished', onSingleFinished);
+            this.off('playbackStopped', onSingleFinished);
+            this.batchCurrentIndex++;
+            this._emit('batchItemFinished', {
+                index: this.batchCurrentIndex - 1,
+                total: this.batchItems.length
+            });
+            setTimeout(() => this._playNextBatchItem(onApplyBrush), 0);
+        };
+        
+        this.on('playbackFinished', onSingleFinished);
+        this.on('playbackStopped', onSingleFinished);
+    }
+
+    pauseBatch() {
+        if (!this.isBatchPlaying || this.isBatchPaused) return;
+        this.isBatchPaused = true;
+        this.pausePlayback();
+        this._emit('batchPaused');
+    }
+
+    resumeBatch() {
+        if (!this.isBatchPlaying || !this.isBatchPaused) return;
+        this.isBatchPaused = false;
+        this.resumePlayback();
+        this._emit('batchResumed');
+    }
+
+    cancelBatch() {
+        if (!this.isBatchPlaying) return;
+        this.batchCancelRequested = true;
+        this.stopPlayback();
+        this._emit('batchCancelled');
+    }
+
+    saveBatchTemplate(name, items) {
+        const template = {
+            id: 'batch_template_' + Date.now(),
+            name: name,
+            items: items.map(item => ({
+                macroId: item.macroId,
+                offsetX: item.offsetX || 0,
+                offsetZ: item.offsetZ || 0,
+                rotation: item.rotation || 0
+            })),
+            createdAt: Date.now()
+        };
+        this.batchTemplates.push(template);
+        this._saveBatchTemplatesToLocalStorage();
+        this._emit('batchTemplateSaved', template);
+        return template;
+    }
+
+    deleteBatchTemplate(templateId) {
+        this.batchTemplates = this.batchTemplates.filter(t => t.id !== templateId);
+        this._saveBatchTemplatesToLocalStorage();
+        this._emit('batchTemplateDeleted', templateId);
+    }
+
+    renameBatchTemplate(templateId, newName) {
+        const template = this.batchTemplates.find(t => t.id === templateId);
+        if (template) {
+            template.name = newName;
+            this._saveBatchTemplatesToLocalStorage();
+            this._emit('batchTemplateRenamed', { id: templateId, name: newName });
+        }
+    }
+
+    getBatchTemplates() {
+        return this.batchTemplates;
+    }
+
+    getBatchTemplate(templateId) {
+        return this.batchTemplates.find(t => t.id === templateId);
+    }
+
+    _saveBatchTemplatesToLocalStorage() {
+        try {
+            localStorage.setItem('terrain_batch_templates', JSON.stringify(this.batchTemplates));
+        } catch (e) {
+            console.error('保存批量模板失败:', e);
+        }
+    }
+
+    _loadBatchTemplatesFromLocalStorage() {
+        try {
+            const data = localStorage.getItem('terrain_batch_templates');
+            if (data) {
+                this.batchTemplates = JSON.parse(data);
+            }
+        } catch (e) {
+            console.error('加载批量模板失败:', e);
+            this.batchTemplates = [];
         }
     }
 }

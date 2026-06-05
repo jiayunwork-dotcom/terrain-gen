@@ -97,6 +97,11 @@
                         <button class="brush-btn" data-brush="erode">💧 侵蚀</button>
                         <button class="brush-btn" data-brush="noise">✨ 噪声</button>
                     </div>
+                    <div class="brush-section-divider">🎭 蒙版笔刷</div>
+                    <div class="brush-buttons">
+                        <button class="brush-btn" data-brush="mask_white">⬜ 蒙版画白</button>
+                        <button class="brush-btn" data-brush="mask_black">⬛ 蒙版画黑</button>
+                    </div>
                     <div class="control-group">
                         <label>笔刷大小: <span id="brush-size-value">10</span></label>
                         <input type="range" id="brush-size" min="1" max="50" value="10">
@@ -175,6 +180,40 @@
                         💡 点击下方宏条目查看变换回放参数
                     </div>
                     <div class="macro-list" id="macro-list"></div>
+                    
+                    <div class="batch-section-divider">📦 批量执行</div>
+                    <div class="batch-execution-panel">
+                        <div class="batch-layout">
+                            <div class="batch-macro-list">
+                                <div class="batch-panel-title">可选宏</div>
+                                <div class="batch-macro-checkboxes" id="batch-macro-checkboxes"></div>
+                            </div>
+                            <div class="batch-config-panel">
+                                <div class="batch-panel-title">执行配置</div>
+                                <div class="batch-config-table" id="batch-config-table">
+                                    <div class="empty-state" style="padding: 10px;">请先选择要执行的宏</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="batch-progress" id="batch-progress" style="display: none;">
+                            <div class="progress-label">执行进度: <span id="batch-progress-text">0/0</span></div>
+                            <div class="progress-bar">
+                                <div class="progress-fill" id="batch-progress-fill"></div>
+                            </div>
+                        </div>
+                        <div class="batch-controls">
+                            <button id="batch-execute" class="primary-btn" style="margin-top: 0; width: auto; flex: 2;">▶️ 批量执行</button>
+                            <button id="batch-pause" disabled style="flex: 1;">⏸️ 暂停</button>
+                            <button id="batch-cancel" disabled style="flex: 1;">⏹️ 取消</button>
+                        </div>
+                        <div class="batch-template-section">
+                            <div class="batch-panel-title">💾 批量模板</div>
+                            <div class="batch-template-controls">
+                                <button id="batch-save-template">💾 保存为模板</button>
+                            </div>
+                            <div class="batch-template-list" id="batch-template-list"></div>
+                        </div>
+                    </div>
                 </div>
             </div>
             

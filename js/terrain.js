@@ -414,6 +414,58 @@ class TerrainGenerator {
         this.updateGeometryFromHeightMap();
     }
 
+    applyMaskBrush(centerX, centerZ, maskMode, size, strength) {
+        const activeLayer = this.layerManager.getActiveLayer();
+        if (!activeLayer || activeLayer.locked) return;
+        
+        const halfSize = this.size / 2;
+        const step = this.size / (this.resolution - 1);
+        
+        const gridSize = Math.ceil(size / step);
+        const centerGridX = Math.floor((centerX + halfSize) / step);
+        const centerGridZ = Math.floor((centerZ + halfSize) / step);
+        
+        const layerMask = activeLayer.mask;
+        
+        for (let dz = -gridSize; dz <= gridSize; dz++) {
+            for (let dx = -gridSize; dx <= gridSize; dx++) {
+                const gridX = centerGridX + dx;
+                const gridZ = centerGridZ + dz;
+                
+                if (gridX < 0 || gridX >= this.resolution || gridZ < 0 || gridZ >= this.resolution) {
+                    continue;
+                }
+                
+                const worldX = gridX * step - halfSize;
+                const worldZ = gridZ * step - halfSize;
+                
+                const dist = Math.sqrt(
+                    Math.pow(worldX - centerX, 2) + 
+                    Math.pow(worldZ - centerZ, 2)
+                );
+                
+                if (dist > size) continue;
+                
+                const falloff = 1 - (dist / size);
+                const smoothFalloff = falloff * falloff * (3 - 2 * falloff);
+                const weight = smoothFalloff * strength * 0.05;
+                
+                const idx = gridZ * this.resolution + gridX;
+                let maskVal = layerMask[idx];
+                
+                if (maskMode === 'mask_white') {
+                    maskVal = Math.min(1.0, maskVal + weight);
+                } else if (maskMode === 'mask_black') {
+                    maskVal = Math.max(0.0, maskVal - weight);
+                }
+                
+                layerMask[idx] = maskVal;
+            }
+        }
+        
+        this.updateGeometryFromHeightMap();
+    }
+
     cloneHeightMap() {
         return this.layerManager.toJSON();
     }
