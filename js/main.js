@@ -964,16 +964,20 @@ class TerrainEditor {
             return;
         }
 
-        layers.forEach(layer => {
+        let draggedLayerId = null;
+
+        layers.forEach((layer, index) => {
             const isActive = layer.id === this.terrain.layerManager.activeLayerId;
             const item = document.createElement('div');
             item.className = `layer-item ${isActive ? 'active' : ''} ${layer.locked ? 'locked' : ''} ${!layer.visible ? 'hidden-layer' : ''}`;
             item.dataset.layerId = layer.id;
+            item.draggable = true;
             
             const thumbnail = layer.generateThumbnail(36);
             
             item.innerHTML = `
                 <div class="layer-item-header">
+                    <span class="drag-handle" style="cursor: grab; color: #888; margin-right: 4px;">⋮⋮</span>
                     <img class="layer-thumbnail" src="${thumbnail}" alt="缩略图">
                     <span class="layer-name" title="${layer.name}">${layer.name}</span>
                     <button class="layer-visibility-btn" title="${layer.visible ? '隐藏' : '显示'}">${layer.visible ? '👁️' : '👁️‍🗨️'}</button>
@@ -1002,8 +1006,49 @@ class TerrainEditor {
             `;
 
             item.addEventListener('click', (e) => {
-                if (e.target.tagName !== 'BUTTON' && e.target.tagName !== 'INPUT' && e.target.tagName !== 'SELECT') {
+                if (e.target.tagName !== 'BUTTON' && e.target.tagName !== 'INPUT' && e.target.tagName !== 'SELECT' && e.target.className !== 'drag-handle') {
                     this.terrain.layerManager.setActiveLayer(layer.id);
+                }
+            });
+
+            item.addEventListener('dragstart', (e) => {
+                draggedLayerId = layer.id;
+                item.classList.add('dragging');
+                e.dataTransfer.effectAllowed = 'move';
+            });
+
+            item.addEventListener('dragend', () => {
+                item.classList.remove('dragging');
+                document.querySelectorAll('.layer-item').forEach(el => {
+                    el.classList.remove('drag-over');
+                });
+            });
+
+            item.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                item.classList.add('drag-over');
+            });
+
+            item.addEventListener('dragleave', () => {
+                item.classList.remove('drag-over');
+            });
+
+            item.addEventListener('drop', (e) => {
+                e.preventDefault();
+                item.classList.remove('drag-over');
+                
+                if (draggedLayerId && draggedLayerId !== layer.id) {
+                    const allLayers = this.terrain.layerManager.layers;
+                    const draggedIndex = allLayers.findIndex(l => l.id === draggedLayerId);
+                    const targetIndex = allLayers.findIndex(l => l.id === layer.id);
+                    
+                    if (draggedIndex !== -1 && targetIndex !== -1) {
+                        const [removed] = allLayers.splice(draggedIndex, 1);
+                        allLayers.splice(targetIndex, 0, removed);
+                        this.terrain.layerManager._notifyChanged();
+                        this.history.pushState(this.terrain.cloneHeightMap());
+                    }
                 }
             });
 
@@ -1207,6 +1252,13 @@ class TerrainEditor {
         const macros = this.macroManager.getMacros();
         container.innerHTML = '';
 
+        const hintEl = document.getElementById('macro-list-hint');
+        if (macros.length > 0 && !this.currentSelectedMacro) {
+            hintEl.style.display = 'block';
+        } else {
+            hintEl.style.display = 'none';
+        }
+
         if (macros.length === 0) {
             container.innerHTML = '<div class="empty-state">暂无录制的宏</div>';
             return;
@@ -1227,9 +1279,10 @@ class TerrainEditor {
             item.innerHTML = `
                 <div class="macro-info">
                     <div class="macro-name">${macro.name}</div>
-                    <div class="macro-meta">${macro.operations.length} 步 · ${duration}秒</div>
+                    <div class="macro-meta">${macro.operations.length} 步 · ${duration}秒 ${this.currentSelectedMacro && this.currentSelectedMacro.id === macro.id ? ' · ✅ 已选中' : ''}</div>
                 </div>
                 <div class="macro-actions">
+                    <button data-action="settings" title="变换设置">⚙️</button>
                     <button data-action="play" title="播放">▶️</button>
                     <button data-action="rename" title="重命名">✏️</button>
                     <button data-action="delete" title="删除">🗑️</button>
@@ -1242,6 +1295,14 @@ class TerrainEditor {
                     document.getElementById('macro-playback').style.display = 'block';
                     this.renderMacros();
                 }
+            });
+
+            item.querySelector('[data-action="settings"]').addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.currentSelectedMacro = macro;
+                document.getElementById('macro-playback').style.display = 'block';
+                this.renderMacros();
+                document.getElementById('macro-playback').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             });
 
             item.querySelector('[data-action="play"]').addEventListener('click', (e) => {

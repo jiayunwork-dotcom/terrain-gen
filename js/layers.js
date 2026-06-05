@@ -49,13 +49,9 @@ class TerrainLayer {
         const ctx = canvas.getContext('2d');
         const imageData = ctx.createImageData(size, size);
 
-        let minHeight = Infinity;
-        let maxHeight = -Infinity;
-        for (let i = 0; i < this.heightMap.length; i++) {
-            minHeight = Math.min(minHeight, this.heightMap[i]);
-            maxHeight = Math.max(maxHeight, this.heightMap[i]);
-        }
-        const range = maxHeight - minHeight || 1;
+        const globalMin = -100;
+        const globalMax = 150;
+        const globalRange = globalMax - globalMin;
 
         const step = this.resolution / size;
         for (let y = 0; y < size; y++) {
@@ -64,7 +60,7 @@ class TerrainLayer {
                 const srcY = Math.floor(y * step);
                 const idx = Math.min(srcY * this.resolution + srcX, this.heightMap.length - 1);
                 const height = this.heightMap[idx];
-                const normalized = (height - minHeight) / range;
+                const normalized = Math.max(0, Math.min(1, (height - globalMin) / globalRange));
                 const gray = Math.floor(normalized * 255);
                 const pixelIdx = (y * size + x) * 4;
                 imageData.data[pixelIdx] = gray;
@@ -204,16 +200,18 @@ class LayerManager {
                     result = baseHeight + layerHeight * opacity;
                     break;
                 case 'max':
-                    result = Math.max(baseHeight, layerHeight * opacity);
+                    result = baseHeight * (1 - opacity) + Math.max(baseHeight, layerHeight) * opacity;
                     break;
                 case 'min':
-                    result = Math.min(baseHeight, layerHeight * opacity);
+                    result = baseHeight * (1 - opacity) + Math.min(baseHeight, layerHeight) * opacity;
                     break;
                 case 'multiply':
-                    result = baseHeight * (1 + (layerHeight / 100 - 0.5) * opacity * 2);
+                    const multiplyFactor = 1 + (layerHeight / 50);
+                    result = baseHeight * (1 - opacity) + (baseHeight * multiplyFactor) * opacity;
                     break;
                 case 'difference':
-                    result = Math.abs(baseHeight - layerHeight) * opacity + baseHeight * (1 - opacity);
+                    const diff = Math.abs(baseHeight - layerHeight);
+                    result = baseHeight * (1 - opacity) + diff * opacity;
                     break;
                 default:
                     result = baseHeight + layerHeight * opacity;

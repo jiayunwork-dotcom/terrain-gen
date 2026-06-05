@@ -660,6 +660,22 @@ button:active {
     margin-bottom: 3px;
 }
 
+.layer-item.dragging {
+    opacity: 0.5;
+    transform: scale(1.02);
+}
+
+.layer-item.drag-over {
+    border-color: #e94560 !important;
+    box-shadow: 0 0 10px rgba(233, 69, 96, 0.5);
+}
+
+.drag-handle {
+    user-select: none;
+    font-size: 12px;
+    line-height: 1;
+}
+
 .macro-controls {
     display: flex;
     gap: 8px;
