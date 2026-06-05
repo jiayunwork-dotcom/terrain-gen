@@ -22,6 +22,24 @@
             </div>
             
             <div class="panel-section">
+                <div class="section-title" data-section="presets">
+                    <span>🎯 地形预设</span>
+                    <span class="arrow">▼</span>
+                </div>
+                <div class="section-content" id="presets-panel">
+                    <div class="control-group">
+                        <label>内置预设</label>
+                        <div class="preset-grid" id="builtin-presets"></div>
+                    </div>
+                    <div class="control-group">
+                        <label>自定义预设</label>
+                        <div class="preset-list" id="custom-presets"></div>
+                    </div>
+                    <button id="save-preset" class="primary-btn">💾 保存当前为预设</button>
+                </div>
+            </div>
+            
+            <div class="panel-section">
                 <div class="section-title" data-section="generation">
                     <span>⚙️ 生成参数</span>
                     <span class="arrow">▼</span>
@@ -239,33 +257,86 @@
                     <button id="export-obj">📦 导出网格 (OBJ)</button>
                 </div>
             </div>
+            
+            <div class="panel-section">
+                <div class="section-title" data-section="compare">
+                    <span>🔄 对比模式</span>
+                    <span class="arrow">▶</span>
+                </div>
+                <div class="section-content" id="compare-panel" style="display:none;">
+                    <div class="control-group">
+                        <label>启用对比模式</label>
+                        <input type="checkbox" id="compare-enabled">
+                    </div>
+                    <div class="control-group">
+                        <label>选择对比快照</label>
+                        <select id="compare-snapshot">
+                            <option value="">-- 请选择快照 --</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="panel-section">
+                <div class="section-title" data-section="snapshots">
+                    <span>📸 场景快照</span>
+                    <span class="arrow">▼</span>
+                </div>
+                <div class="section-content" id="snapshots-panel">
+                    <button id="create-snapshot" class="primary-btn">📷 创建快照</button>
+                    <div class="snapshot-list" id="snapshot-list"></div>
+                </div>
+            </div>
         </div>
         
         <div id="viewport">
             <canvas id="canvas"></canvas>
+            <canvas id="canvas-compare"></canvas>
             <div id="brush-indicator"></div>
+            <div id="compare-divider" class="compare-divider" style="display:none;"></div>
         </div>
         
         <div id="statusbar">
-            <div class="status-item">
-                <span class="status-label">FPS:</span>
-                <span id="fps-value" class="status-value">60</span>
+            <div id="status-left" class="status-section">
+                <div class="status-item">
+                    <span class="status-label">FPS:</span>
+                    <span id="fps-value" class="status-value">60</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">三角面:</span>
+                    <span id="triangles-value" class="status-value">0</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">顶点:</span>
+                    <span id="vertices-value" class="status-value">0</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">植被:</span>
+                    <span id="vegetation-count-value" class="status-value">0</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">GPU内存:</span>
+                    <span id="gpu-memory-value" class="status-value">0 MB</span>
+                </div>
             </div>
-            <div class="status-item">
-                <span class="status-label">三角面:</span>
-                <span id="triangles-value" class="status-value">0</span>
-            </div>
-            <div class="status-item">
-                <span class="status-label">顶点:</span>
-                <span id="vertices-value" class="status-value">0</span>
-            </div>
-            <div class="status-item">
-                <span class="status-label">植被:</span>
-                <span id="vegetation-count-value" class="status-value">0</span>
-            </div>
-            <div class="status-item">
-                <span class="status-label">GPU内存:</span>
-                <span id="gpu-memory-value" class="status-value">0 MB</span>
+            <div id="status-right" class="status-section" style="display:none;">
+                <span class="status-label-compare">【对比】</span>
+                <div class="status-item">
+                    <span class="status-label">FPS:</span>
+                    <span id="fps-value-compare" class="status-value">60</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">三角面:</span>
+                    <span id="triangles-value-compare" class="status-value">0</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">顶点:</span>
+                    <span id="vertices-value-compare" class="status-value">0</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">植被:</span>
+                    <span id="vegetation-count-value-compare" class="status-value">0</span>
+                </div>
             </div>
         </div>
     </div>

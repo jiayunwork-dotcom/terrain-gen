@@ -7,10 +7,13 @@ import AtmosphereSystem from './atmosphere.js';
 import HistoryManager from './history.js';
 import Exporter from './exporter.js';
 import TerrainLOD from './lod.js';
+import PresetManager from './presets.js';
+import SnapshotManager from './snapshots.js';
 
 class TerrainEditor {
     constructor() {
         this.canvas = document.getElementById('canvas');
+        this.canvasCompare = document.getElementById('canvas-compare');
         this.viewport = document.getElementById('viewport');
         this.brushIndicator = document.getElementById('brush-indicator');
         
@@ -20,7 +23,17 @@ class TerrainEditor {
         this.scene = null;
         this.camera = null;
         this.renderer = null;
+        this.rendererCompare = null;
         this.controls = null;
+        
+        this.compareScene = null;
+        this.compareCamera = null;
+        this.compareTerrain = null;
+        this.compareWater = null;
+        this.compareVegetation = null;
+        this.compareAtmosphere = null;
+        this.compareTerrainLOD = null;
+        
         this.raycaster = new THREE.Raycaster();
         this.mouse = new THREE.Vector2();
         
@@ -31,6 +44,12 @@ class TerrainEditor {
         this.atmosphere = null;
         this.history = new HistoryManager();
         this.exporter = null;
+        
+        this.presetManager = new PresetManager();
+        this.snapshotManager = new SnapshotManager();
+        
+        this.compareMode = false;
+        this.compareSnapshotId = null;
         
         this.currentBrush = 'raise';
         this.brushSize = 10;
@@ -43,11 +62,16 @@ class TerrainEditor {
         this.lastFpsUpdate = 0;
         this.currentFps = 60;
         
+        this.compareFrameCount = 0;
+        this.compareLastFpsUpdate = 0;
+        this.compareFps = 60;
+        
         this.init();
     }
 
     init() {
         this.setupScene();
+        this.setupCompareScene();
         this.setupTerrain();
         this.setupLOD();
         this.setupWater();
@@ -56,6 +80,9 @@ class TerrainEditor {
         this.setupExporter();
         this.setupEventListeners();
         this.setupUI();
+        
+        this.renderPresets();
+        this.renderSnapshots();
         
         this.animate();
     }
@@ -74,7 +101,8 @@ class TerrainEditor {
         
         this.renderer = new THREE.WebGLRenderer({
             canvas: this.canvas,
-            antialias: true
+            antialias: true,
+            preserveDrawingBuffer: true
         });
         this.renderer.setSize(this.viewport.clientWidth, this.viewport.clientHeight);
         this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -89,6 +117,28 @@ class TerrainEditor {
         this.controls.maxDistance = 500;
         
         window.addEventListener('resize', () => this.onResize());
+    }
+
+    setupCompareScene() {
+        this.compareScene = new THREE.Scene();
+        
+        this.compareCamera = new THREE.PerspectiveCamera(
+            60,
+            this.viewport.clientWidth / 2 / this.viewport.clientHeight,
+            0.1,
+            2000
+        );
+        this.compareCamera.position.set(150, 120, 150);
+        this.compareCamera.lookAt(0, 0, 0);
+        
+        this.rendererCompare = new THREE.WebGLRenderer({
+            canvas: this.canvasCompare,
+            antialias: true
+        });
+        this.rendererCompare.setSize(this.viewport.clientWidth / 2, this.viewport.clientHeight);
+        this.rendererCompare.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        this.rendererCompare.shadowMap.enabled = true;
+        this.rendererCompare.shadowMap.type = THREE.PCFSoftShadowMap;
     }
 
     setupTerrain() {
@@ -189,16 +239,7 @@ class TerrainEditor {
         });
 
         document.getElementById('regenerate').addEventListener('click', () => {
-            this.terrain.regenerate();
-            this.terrainLOD.updateAllHeights();
-            this.history.clear();
-            this.history.pushState(this.terrain.cloneHeightMap());
-            
-            if (this.vegetation.params.enabled) {
-                this.vegetation.removeFromScene(this.scene);
-                this.vegetation.generate();
-                this.vegetation.addToScene(this.scene);
-            }
+            this.regenerateTerrain();
         });
 
         document.querySelectorAll('.brush-btn').forEach(btn => {
@@ -338,6 +379,22 @@ class TerrainEditor {
             this.exporter.exportOBJ();
         });
 
+        document.getElementById('save-preset').addEventListener('click', () => {
+            this.showSavePresetDialog();
+        });
+
+        document.getElementById('create-snapshot').addEventListener('click', () => {
+            this.showCreateSnapshotDialog();
+        });
+
+        document.getElementById('compare-enabled').addEventListener('change', (e) => {
+            this.toggleCompareMode(e.target.checked);
+        });
+
+        document.getElementById('compare-snapshot').addEventListener('change', (e) => {
+            this.setCompareSnapshot(e.target.value);
+        });
+
         document.addEventListener('keydown', (e) => {
             if (e.ctrlKey || e.metaKey) {
                 if (e.key === 'z') {
@@ -361,6 +418,80 @@ class TerrainEditor {
             }
             callback(slider.value);
         });
+    }
+
+    syncUIWithParams() {
+        document.getElementById('noise-type').value = this.terrain.params.noiseType;
+        
+        document.getElementById('octaves').value = this.terrain.params.octaves;
+        document.getElementById('octaves-value').textContent = this.terrain.params.octaves;
+        
+        document.getElementById('frequency').value = this.terrain.params.frequency;
+        document.getElementById('frequency-value').textContent = this.terrain.params.frequency;
+        
+        document.getElementById('amplitude').value = this.terrain.params.amplitude;
+        document.getElementById('amplitude-value').textContent = this.terrain.params.amplitude;
+        
+        document.getElementById('lacunarity').value = this.terrain.params.lacunarity;
+        document.getElementById('lacunarity-value').textContent = this.terrain.params.lacunarity;
+        
+        document.getElementById('persistence').value = this.terrain.params.persistence;
+        document.getElementById('persistence-value').textContent = this.terrain.params.persistence;
+        
+        document.getElementById('seed').value = this.terrain.params.seed;
+        
+        document.getElementById('grass-height').value = this.terrain.textureParams.grassHeight;
+        document.getElementById('grass-height-value').textContent = this.terrain.textureParams.grassHeight;
+        
+        document.getElementById('rock-slope').value = this.terrain.textureParams.rockSlope;
+        document.getElementById('rock-slope-value').textContent = this.terrain.textureParams.rockSlope;
+        
+        document.getElementById('snow-height').value = this.terrain.textureParams.snowHeight;
+        document.getElementById('snow-height-value').textContent = this.terrain.textureParams.snowHeight;
+        
+        document.getElementById('sand-height').value = this.terrain.textureParams.sandHeight;
+        document.getElementById('sand-height-value').textContent = this.terrain.textureParams.sandHeight;
+        
+        document.getElementById('blend-range').value = this.terrain.textureParams.blendRange;
+        document.getElementById('blend-range-value').textContent = this.terrain.textureParams.blendRange;
+        
+        document.getElementById('water-enabled').checked = this.water.params.enabled;
+        
+        document.getElementById('water-level').value = this.water.params.level;
+        document.getElementById('water-level-value').textContent = this.water.params.level;
+        
+        document.getElementById('wave-strength').value = this.water.params.waveStrength;
+        document.getElementById('wave-strength-value').textContent = this.water.params.waveStrength;
+        
+        document.getElementById('water-opacity').value = this.water.params.opacity;
+        document.getElementById('water-opacity-value').textContent = this.water.params.opacity;
+        
+        document.getElementById('vegetation-enabled').checked = this.vegetation.params.enabled;
+        
+        document.getElementById('tree-density').value = this.vegetation.params.treeDensity;
+        document.getElementById('tree-density-value').textContent = this.vegetation.params.treeDensity;
+        
+        document.getElementById('grass-density').value = this.vegetation.params.grassDensity;
+        document.getElementById('grass-density-value').textContent = this.vegetation.params.grassDensity;
+        
+        document.getElementById('veg-max-height').value = this.vegetation.params.maxHeight;
+        document.getElementById('veg-max-height-value').textContent = this.vegetation.params.maxHeight;
+        
+        document.getElementById('veg-max-slope').value = this.vegetation.params.maxSlope;
+        document.getElementById('veg-max-slope-value').textContent = this.vegetation.params.maxSlope;
+        
+        const timeVal = this.atmosphere.params.time;
+        document.getElementById('time-slider').value = timeVal;
+        const hours = Math.floor(timeVal);
+        const minutes = Math.floor((timeVal % 1) * 60);
+        document.getElementById('time-value').textContent = 
+            `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+        
+        document.getElementById('fog-density').value = this.atmosphere.params.fogDensity;
+        document.getElementById('fog-density-value').textContent = this.atmosphere.params.fogDensity;
+        
+        document.getElementById('sun-intensity').value = this.atmosphere.params.sunIntensity;
+        document.getElementById('sun-intensity-value').textContent = this.atmosphere.params.sunIntensity;
     }
 
     updateFog() {
@@ -399,6 +530,386 @@ class TerrainEditor {
         this.water.setSkyColor(skyColor, horizonColor);
     }
 
+    regenerateTerrain() {
+        this.terrain.regenerate();
+        this.terrainLOD.updateAllHeights();
+        this.history.clear();
+        this.history.pushState(this.terrain.cloneHeightMap());
+        
+        if (this.vegetation.params.enabled) {
+            this.vegetation.removeFromScene(this.scene);
+            this.vegetation.generate();
+            this.vegetation.addToScene(this.scene);
+        }
+    }
+
+    renderPresets() {
+        const { builtin, custom } = this.presetManager.getAllPresets();
+        
+        const builtinContainer = document.getElementById('builtin-presets');
+        builtinContainer.innerHTML = '';
+        
+        builtin.forEach(preset => {
+            const btn = document.createElement('button');
+            btn.className = 'preset-btn';
+            btn.textContent = preset.name;
+            btn.title = preset.description;
+            btn.addEventListener('click', () => this.applyPreset(preset.id));
+            builtinContainer.appendChild(btn);
+        });
+        
+        const customContainer = document.getElementById('custom-presets');
+        customContainer.innerHTML = '';
+        
+        if (custom.length === 0) {
+            customContainer.innerHTML = '<div class="empty-state">暂无自定义预设</div>';
+        } else {
+            custom.forEach(preset => {
+                const item = document.createElement('div');
+                item.className = 'preset-item';
+                item.innerHTML = `
+                    <span class="preset-item-name">${preset.name}</span>
+                    <div class="preset-item-actions">
+                        <button data-action="rename" title="重命名">✏️</button>
+                        <button data-action="delete" title="删除">🗑️</button>
+                    </div>
+                `;
+                item.addEventListener('click', (e) => {
+                    if (e.target.tagName !== 'BUTTON') {
+                        this.applyPreset(preset.id);
+                    }
+                });
+                item.querySelector('[data-action="rename"]').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.showRenamePresetDialog(preset.id);
+                });
+                item.querySelector('[data-action="delete"]').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.deletePreset(preset.id);
+                });
+                customContainer.appendChild(item);
+            });
+        }
+    }
+
+    applyPreset(presetId) {
+        const preset = this.presetManager.getPresetById(presetId);
+        if (!preset) return;
+        
+        this.presetManager.applyPreset(preset, this);
+        this.syncUIWithParams();
+        this.regenerateTerrain();
+    }
+
+    showSavePresetDialog() {
+        this.showModal({
+            title: '保存预设',
+            placeholder: '请输入预设名称',
+            defaultValue: '',
+            onConfirm: (name) => {
+                if (name && name.trim()) {
+                    const state = this.presetManager.extractCurrentState(this);
+                    this.presetManager.createCustomPreset(name.trim(), state);
+                    this.renderPresets();
+                }
+            }
+        });
+    }
+
+    showRenamePresetDialog(presetId) {
+        const preset = this.presetManager.getPresetById(presetId);
+        if (!preset) return;
+        
+        this.showModal({
+            title: '重命名预设',
+            placeholder: '请输入新名称',
+            defaultValue: preset.name,
+            onConfirm: (name) => {
+                if (name && name.trim()) {
+                    this.presetManager.renameCustomPreset(presetId, name.trim());
+                    this.renderPresets();
+                }
+            }
+        });
+    }
+
+    deletePreset(presetId) {
+        if (confirm('确定要删除这个预设吗？')) {
+            this.presetManager.deleteCustomPreset(presetId);
+            this.renderPresets();
+        }
+    }
+
+    renderSnapshots() {
+        const snapshots = this.snapshotManager.getSnapshots();
+        const container = document.getElementById('snapshot-list');
+        container.innerHTML = '';
+        
+        if (snapshots.length === 0) {
+            container.innerHTML = '<div class="empty-state">暂无快照，点击上方按钮创建</div>';
+        } else {
+            snapshots.forEach(snapshot => {
+                const item = document.createElement('div');
+                item.className = 'snapshot-item';
+                if (snapshot.id === this.compareSnapshotId) {
+                    item.classList.add('selected');
+                }
+                item.innerHTML = `
+                    <img class="snapshot-thumbnail" src="${snapshot.thumbnail || 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'}" alt="缩略图">
+                    <div class="snapshot-info">
+                        <div class="snapshot-name">${snapshot.name}</div>
+                        <div class="snapshot-time">${this.snapshotManager.formatTime(snapshot.createdAt)}</div>
+                    </div>
+                    <div class="snapshot-actions">
+                        <button data-action="rename" title="重命名">✏️</button>
+                        <button data-action="delete" title="删除">🗑️</button>
+                    </div>
+                `;
+                item.addEventListener('click', (e) => {
+                    if (e.target.tagName !== 'BUTTON') {
+                        this.restoreSnapshot(snapshot.id);
+                    }
+                });
+                item.querySelector('[data-action="rename"]').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.showRenameSnapshotDialog(snapshot.id);
+                });
+                item.querySelector('[data-action="delete"]').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.deleteSnapshot(snapshot.id);
+                });
+                container.appendChild(item);
+            });
+        }
+        
+        this.updateCompareSnapshotOptions();
+    }
+
+    updateCompareSnapshotOptions() {
+        const select = document.getElementById('compare-snapshot');
+        const currentValue = select.value;
+        select.innerHTML = '<option value="">-- 请选择快照 --</option>';
+        
+        const snapshots = this.snapshotManager.getSnapshots();
+        snapshots.forEach(snapshot => {
+            const option = document.createElement('option');
+            option.value = snapshot.id;
+            option.textContent = snapshot.name;
+            select.appendChild(option);
+        });
+        
+        select.value = currentValue;
+    }
+
+    showCreateSnapshotDialog() {
+        this.showModal({
+            title: '创建快照',
+            placeholder: '请输入快照名称',
+            defaultValue: `快照 ${this.snapshotManager.getSnapshots().length + 1}`,
+            onConfirm: (name) => {
+                this.snapshotManager.createSnapshot(this, name || undefined);
+                this.renderSnapshots();
+            }
+        });
+    }
+
+    showRenameSnapshotDialog(snapshotId) {
+        const snapshot = this.snapshotManager.getSnapshotById(snapshotId);
+        if (!snapshot) return;
+        
+        this.showModal({
+            title: '重命名快照',
+            placeholder: '请输入新名称',
+            defaultValue: snapshot.name,
+            onConfirm: (name) => {
+                if (name && name.trim()) {
+                    this.snapshotManager.renameSnapshot(snapshotId, name.trim());
+                    this.renderSnapshots();
+                }
+            }
+        });
+    }
+
+    restoreSnapshot(snapshotId) {
+        const snapshot = this.snapshotManager.getSnapshotById(snapshotId);
+        if (!snapshot) return;
+        
+        this.snapshotManager.restoreSnapshot(snapshot, this);
+        this.syncUIWithParams();
+    }
+
+    deleteSnapshot(snapshotId) {
+        if (confirm('确定要删除这个快照吗？')) {
+            if (this.compareSnapshotId === snapshotId) {
+                this.compareSnapshotId = null;
+                document.getElementById('compare-snapshot').value = '';
+                if (this.compareMode) {
+                    this.toggleCompareMode(false);
+                    document.getElementById('compare-enabled').checked = false;
+                }
+            }
+            this.snapshotManager.deleteSnapshot(snapshotId);
+            this.renderSnapshots();
+        }
+    }
+
+    toggleCompareMode(enabled) {
+        this.compareMode = enabled;
+        const viewport = document.getElementById('viewport');
+        const statusRight = document.getElementById('status-right');
+        
+        if (enabled) {
+            viewport.classList.add('compare-mode');
+            statusRight.style.display = 'flex';
+            document.getElementById('compare-divider').style.display = 'block';
+            this.canvasCompare.style.display = 'block';
+            
+            if (!this.compareSnapshotId) {
+                const snapshots = this.snapshotManager.getSnapshots();
+                if (snapshots.length > 0) {
+                    this.setCompareSnapshot(snapshots[0].id);
+                }
+            }
+            
+            this.onResize();
+        } else {
+            viewport.classList.remove('compare-mode');
+            statusRight.style.display = 'none';
+            document.getElementById('compare-divider').style.display = 'none';
+            this.canvasCompare.style.display = 'none';
+        }
+    }
+
+    setCompareSnapshot(snapshotId) {
+        this.compareSnapshotId = snapshotId;
+        document.getElementById('compare-snapshot').value = snapshotId;
+        this.renderSnapshots();
+        
+        if (snapshotId) {
+            this.loadCompareScene(snapshotId);
+        }
+    }
+
+    loadCompareScene(snapshotId) {
+        const snapshot = this.snapshotManager.getSnapshotById(snapshotId);
+        if (!snapshot) return;
+        
+        while (this.compareScene.children.length > 0) {
+            this.compareScene.remove(this.compareScene.children[0]);
+        }
+        
+        const terrainGenerator = new TerrainGenerator(this.terrainSize, this.terrainResolution);
+        Object.assign(terrainGenerator.params, snapshot.params.terrainParams);
+        Object.assign(terrainGenerator.textureParams, snapshot.params.textureParams);
+        const terrainMesh = terrainGenerator.createMesh();
+        
+        if (snapshot.heightMapData) {
+            const heightMap = new Float32Array(snapshot.heightMapData);
+            terrainGenerator.restoreHeightMap(heightMap);
+        }
+        
+        this.compareScene.add(terrainMesh);
+        this.compareTerrain = terrainGenerator;
+        
+        const waterSystem = new WaterSystem(this.terrainSize * 1.5);
+        Object.assign(waterSystem.params, snapshot.params.waterParams);
+        const waterMesh = waterSystem.createMesh();
+        waterSystem.setVisible(waterSystem.params.enabled);
+        waterSystem.updateLevel();
+        this.compareScene.add(waterMesh);
+        this.compareWater = waterSystem;
+        
+        const vegSystem = new VegetationSystem(terrainGenerator, this.terrainSize);
+        Object.assign(vegSystem.params, snapshot.params.vegetationParams);
+        if (vegSystem.params.enabled) {
+            vegSystem.generate();
+            vegSystem.addToScene(this.compareScene);
+        }
+        this.compareVegetation = vegSystem;
+        
+        const atmoSystem = new AtmosphereSystem();
+        Object.assign(atmoSystem.params, snapshot.params.atmosphereParams);
+        atmoSystem.addToScene(this.compareScene);
+        atmoSystem.update();
+        
+        const fogParams = atmoSystem.getFogParams();
+        this.compareScene.fog = new THREE.FogExp2(fogParams.color, fogParams.density);
+        waterSystem.setFog(fogParams.density, fogParams.color);
+        
+        this.compareAtmosphere = atmoSystem;
+        
+        const sunDir = atmoSystem.getSunDirection();
+        if (terrainGenerator.material) {
+            terrainGenerator.material.uniforms.uSunDirection.value.copy(sunDir);
+        }
+        waterSystem.setSunDirection(sunDir);
+        
+        const time = atmoSystem.params.time;
+        let skyColor = new THREE.Color(0x64b5f6);
+        let horizonColor = new THREE.Color(0x90caf9);
+        if (time < 6 || time > 20) {
+            skyColor.setHex(0x1a237e);
+            horizonColor.setHex(0x283593);
+        } else if (time >= 6 && time < 8) {
+            const t = (time - 6) / 2;
+            skyColor.lerpColors(new THREE.Color(0xff8a65), new THREE.Color(0x64b5f6), t);
+            horizonColor.lerpColors(new THREE.Color(0xffab91), new THREE.Color(0x90caf9), t);
+        } else if (time >= 17 && time < 20) {
+            const t = (time - 17) / 3;
+            skyColor.lerpColors(new THREE.Color(0x64b5f6), new THREE.Color(0xff8a65), t);
+            horizonColor.lerpColors(new THREE.Color(0x90caf9), new THREE.Color(0xffab91), t);
+        }
+        waterSystem.setSkyColor(skyColor, horizonColor);
+    }
+
+    showModal({ title, placeholder, defaultValue, onConfirm }) {
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay';
+        overlay.innerHTML = `
+            <div class="modal">
+                <div class="modal-header">${title}</div>
+                <div class="modal-body">
+                    <input type="text" placeholder="${placeholder}" value="${defaultValue || ''}" autofocus>
+                </div>
+                <div class="modal-footer">
+                    <button class="cancel-btn">取消</button>
+                    <button class="primary-btn">确定</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(overlay);
+        
+        const input = overlay.querySelector('input');
+        input.focus();
+        input.select();
+        
+        overlay.querySelector('.cancel-btn').addEventListener('click', () => {
+            document.body.removeChild(overlay);
+        });
+        
+        overlay.querySelector('.primary-btn').addEventListener('click', () => {
+            const value = input.value;
+            document.body.removeChild(overlay);
+            onConfirm(value);
+        });
+        
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                const value = input.value;
+                document.body.removeChild(overlay);
+                onConfirm(value);
+            } else if (e.key === 'Escape') {
+                document.body.removeChild(overlay);
+            }
+        });
+        
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) {
+                document.body.removeChild(overlay);
+            }
+        });
+    }
+
     onMouseMove(event) {
         const rect = this.canvas.getBoundingClientRect();
         this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
@@ -426,6 +937,7 @@ class TerrainEditor {
     onMouseDown(event) {
         if (event.button !== 0) return;
         if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+        if (this.compareMode) return;
         
         const pos = this.getTerrainMousePosition();
         if (pos) {
@@ -553,9 +1065,22 @@ class TerrainEditor {
     }
 
     onResize() {
-        this.camera.aspect = this.viewport.clientWidth / this.viewport.clientHeight;
-        this.camera.updateProjectionMatrix();
-        this.renderer.setSize(this.viewport.clientWidth, this.viewport.clientHeight);
+        const width = this.viewport.clientWidth;
+        const height = this.viewport.clientHeight;
+        
+        if (this.compareMode) {
+            this.camera.aspect = (width / 2) / height;
+            this.camera.updateProjectionMatrix();
+            this.renderer.setSize(width / 2, height);
+            
+            this.compareCamera.aspect = (width / 2) / height;
+            this.compareCamera.updateProjectionMatrix();
+            this.rendererCompare.setSize(width / 2, height);
+        } else {
+            this.camera.aspect = width / height;
+            this.camera.updateProjectionMatrix();
+            this.renderer.setSize(width, height);
+        }
     }
 
     calculateGPUMemory() {
@@ -616,12 +1141,40 @@ class TerrainEditor {
         }
     }
 
+    updateComparePerformanceStats(timestamp) {
+        this.compareFrameCount++;
+        
+        if (timestamp - this.compareLastFpsUpdate >= 1000) {
+            this.compareFps = this.compareFrameCount;
+            this.compareFrameCount = 0;
+            this.compareLastFpsUpdate = timestamp;
+            
+            document.getElementById('fps-value-compare').textContent = this.compareFps;
+            
+            if (this.compareTerrain) {
+                const triangles = this.compareTerrain.getTriangleCount();
+                const vertices = this.compareTerrain.getVertexCount();
+                document.getElementById('triangles-value-compare').textContent = triangles.toLocaleString();
+                document.getElementById('vertices-value-compare').textContent = vertices.toLocaleString();
+                if (this.compareVegetation) {
+                    document.getElementById('vegetation-count-value-compare').textContent = this.compareVegetation.getTotalCount().toLocaleString();
+                }
+            }
+        }
+    }
+
     animate(timestamp = 0) {
         requestAnimationFrame((t) => this.animate(t));
         
         const time = timestamp * 0.001;
         
         this.controls.update();
+        
+        if (this.compareMode && this.compareCamera) {
+            this.compareCamera.position.copy(this.camera.position);
+            this.compareCamera.rotation.copy(this.camera.rotation);
+            this.compareCamera.updateMatrixWorld();
+        }
         
         this.water.update(time, this.camera);
         this.vegetation.update(time);
@@ -634,6 +1187,20 @@ class TerrainEditor {
         this.terrainLOD.update(this.camera);
         
         this.renderer.render(this.scene, this.camera);
+        
+        if (this.compareMode && this.compareScene) {
+            if (this.compareWater) {
+                this.compareWater.update(time, this.compareCamera);
+            }
+            if (this.compareVegetation) {
+                this.compareVegetation.update(time);
+            }
+            if (this.compareTerrain && this.compareTerrain.material) {
+                this.compareTerrain.material.uniforms.uTime.value = time;
+            }
+            this.rendererCompare.render(this.compareScene, this.compareCamera);
+            this.updateComparePerformanceStats(timestamp);
+        }
         
         this.updatePerformanceStats(timestamp);
     }
