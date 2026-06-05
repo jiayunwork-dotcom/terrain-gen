@@ -531,6 +531,234 @@ button:active {
     font-size: 12px;
 }
 
+.layer-controls {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 10px;
+}
+
+.layer-controls button {
+    flex: 1;
+    padding: 6px 8px;
+    font-size: 11px;
+}
+
+.layer-list {
+    max-height: 250px;
+    overflow-y: auto;
+}
+
+.layer-item {
+    background: #0f3460;
+    border: 1px solid #16213e;
+    border-radius: 4px;
+    margin-bottom: 6px;
+    padding: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.layer-item:hover {
+    border-color: #e94560;
+}
+
+.layer-item.active {
+    border-color: #e94560;
+    background: rgba(233, 69, 96, 0.2);
+}
+
+.layer-item-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+
+.layer-thumbnail {
+    width: 36px;
+    height: 36px;
+    border-radius: 3px;
+    background: #16213e;
+    flex-shrink: 0;
+    object-fit: cover;
+    border: 1px solid #1a2744;
+}
+
+.layer-name {
+    flex: 1;
+    font-size: 12px;
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.layer-visibility-btn,
+.layer-lock-btn {
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    background: transparent;
+    border: none;
+}
+
+.layer-visibility-btn:hover,
+.layer-lock-btn:hover {
+    background: #1a2744;
+}
+
+.layer-item.locked {
+    opacity: 0.7;
+}
+
+.layer-item.hidden-layer {
+    opacity: 0.5;
+}
+
+.layer-controls-row {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 6px;
+}
+
+.layer-controls-row button {
+    flex: 1;
+    padding: 4px 6px;
+    font-size: 10px;
+}
+
+.layer-opacity {
+    margin-bottom: 4px;
+}
+
+.layer-opacity label {
+    font-size: 10px;
+    color: #888;
+    margin-bottom: 3px;
+}
+
+.layer-opacity input[type="range"] {
+    height: 4px;
+}
+
+.layer-blend-mode {
+    margin-bottom: 4px;
+}
+
+.layer-blend-mode select {
+    padding: 4px 8px;
+    font-size: 11px;
+}
+
+.layer-blend-mode label {
+    font-size: 10px;
+    color: #888;
+    margin-bottom: 3px;
+}
+
+.macro-controls {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+.macro-controls button {
+    flex: 1;
+}
+
+.record-btn {
+    background: linear-gradient(135deg, #e94560 0%, #c23a51 100%);
+    border: none;
+}
+
+.record-btn:hover {
+    background: linear-gradient(135deg, #ff5270 0%, #e94560 100%);
+}
+
+.record-btn.recording {
+    animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+}
+
+.macro-playback {
+    background: rgba(15, 52, 96, 0.5);
+    border-radius: 4px;
+    padding: 10px;
+    margin-bottom: 10px;
+}
+
+.macro-playback-controls {
+    display: flex;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+.macro-playback-controls button {
+    flex: 1;
+    padding: 6px 8px;
+    font-size: 11px;
+}
+
+.macro-list {
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.macro-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 10px;
+    background: #0f3460;
+    border: 1px solid #16213e;
+    border-radius: 4px;
+    margin-bottom: 4px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.macro-item:hover {
+    background: #1a2744;
+    border-color: #e94560;
+}
+
+.macro-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.macro-name {
+    font-size: 12px;
+    font-weight: 500;
+    margin-bottom: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.macro-meta {
+    font-size: 10px;
+    color: #888;
+}
+
+.macro-actions {
+    display: flex;
+    gap: 4px;
+}
+
+.macro-actions button {
+    padding: 4px 8px;
+    font-size: 10px;
+}
+
 @media (max-width: 768px) {
     #toolbar {
         width: 100%;

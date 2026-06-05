@@ -9,6 +9,7 @@ import Exporter from './exporter.js';
 import TerrainLOD from './lod.js';
 import PresetManager from './presets.js';
 import SnapshotManager from './snapshots.js';
+import MacroManager from './macros.js';
 
 class TerrainEditor {
     constructor() {
@@ -47,9 +48,11 @@ class TerrainEditor {
         
         this.presetManager = new PresetManager();
         this.snapshotManager = new SnapshotManager();
+        this.macroManager = new MacroManager();
         
         this.compareMode = false;
         this.compareSnapshotId = null;
+        this.currentRecordingMacro = null;
         
         this.currentBrush = 'raise';
         this.brushSize = 10;
@@ -83,6 +86,10 @@ class TerrainEditor {
         
         this.renderPresets();
         this.renderSnapshots();
+        this.setupLayers();
+        this.setupMacros();
+        this.renderLayers();
+        this.renderMacros();
         
         this.animate();
     }
@@ -926,6 +933,356 @@ class TerrainEditor {
         });
     }
 
+    setupLayers() {
+        this.terrain.layerManager.addChangeListener(() => {
+            this.terrain.updateGeometryFromHeightMap();
+            this.renderLayers();
+        });
+
+        document.getElementById('add-layer-blank').addEventListener('click', () => {
+            const name = `图层 ${this.terrain.layerManager.layers.length + 1}`;
+            this.terrain.layerManager.createLayer(name);
+            this.history.pushState(this.terrain.cloneHeightMap());
+        });
+
+        document.getElementById('add-layer-copy').addEventListener('click', () => {
+            const activeLayer = this.terrain.layerManager.getActiveLayer();
+            if (activeLayer) {
+                this.terrain.layerManager.duplicateLayer(activeLayer.id);
+                this.history.pushState(this.terrain.cloneHeightMap());
+            }
+        });
+    }
+
+    renderLayers() {
+        const container = document.getElementById('layer-list');
+        const layers = this.terrain.layerManager.layers.slice().reverse();
+        container.innerHTML = '';
+
+        if (layers.length === 0) {
+            container.innerHTML = '<div class="empty-state">暂无图层</div>';
+            return;
+        }
+
+        layers.forEach(layer => {
+            const isActive = layer.id === this.terrain.layerManager.activeLayerId;
+            const item = document.createElement('div');
+            item.className = `layer-item ${isActive ? 'active' : ''} ${layer.locked ? 'locked' : ''} ${!layer.visible ? 'hidden-layer' : ''}`;
+            item.dataset.layerId = layer.id;
+            
+            const thumbnail = layer.generateThumbnail(36);
+            
+            item.innerHTML = `
+                <div class="layer-item-header">
+                    <img class="layer-thumbnail" src="${thumbnail}" alt="缩略图">
+                    <span class="layer-name" title="${layer.name}">${layer.name}</span>
+                    <button class="layer-visibility-btn" title="${layer.visible ? '隐藏' : '显示'}">${layer.visible ? '👁️' : '👁️‍🗨️'}</button>
+                    <button class="layer-lock-btn" title="${layer.locked ? '解锁' : '锁定'}">${layer.locked ? '🔒' : '🔓'}</button>
+                </div>
+                <div class="layer-controls-row">
+                    <button data-action="up">⬆️</button>
+                    <button data-action="down">⬇️</button>
+                    <button data-action="merge">⬇️合并</button>
+                    <button data-action="delete">🗑️</button>
+                </div>
+                <div class="layer-opacity">
+                    <label>不透明度: <span class="opacity-value">${layer.opacity.toFixed(2)}</span></label>
+                    <input type="range" class="layer-opacity-slider" min="0" max="1" step="0.01" value="${layer.opacity}">
+                </div>
+                <div class="layer-blend-mode">
+                    <label>混合模式</label>
+                    <select class="layer-blend-select">
+                        <option value="add" ${layer.blendMode === 'add' ? 'selected' : ''}>叠加</option>
+                        <option value="max" ${layer.blendMode === 'max' ? 'selected' : ''}>最大值</option>
+                        <option value="min" ${layer.blendMode === 'min' ? 'selected' : ''}>最小值</option>
+                        <option value="multiply" ${layer.blendMode === 'multiply' ? 'selected' : ''}>乘法</option>
+                        <option value="difference" ${layer.blendMode === 'difference' ? 'selected' : ''}>差值</option>
+                    </select>
+                </div>
+            `;
+
+            item.addEventListener('click', (e) => {
+                if (e.target.tagName !== 'BUTTON' && e.target.tagName !== 'INPUT' && e.target.tagName !== 'SELECT') {
+                    this.terrain.layerManager.setActiveLayer(layer.id);
+                }
+            });
+
+            item.querySelector('.layer-visibility-btn').addEventListener('click', (e) => {
+                e.stopPropagation();
+                layer.visible = !layer.visible;
+                this.terrain.layerManager._notifyChanged();
+            });
+
+            item.querySelector('.layer-lock-btn').addEventListener('click', (e) => {
+                e.stopPropagation();
+                layer.locked = !layer.locked;
+                this.renderLayers();
+            });
+
+            item.querySelector('[data-action="up"]').addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.terrain.layerManager.moveLayer(layer.id, 'up');
+                this.history.pushState(this.terrain.cloneHeightMap());
+            });
+
+            item.querySelector('[data-action="down"]').addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.terrain.layerManager.moveLayer(layer.id, 'down');
+                this.history.pushState(this.terrain.cloneHeightMap());
+            });
+
+            item.querySelector('[data-action="merge"]').addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (confirm('确定要向下合并吗？')) {
+                    this.terrain.layerManager.mergeDown(layer.id);
+                    this.history.pushState(this.terrain.cloneHeightMap());
+                }
+            });
+
+            item.querySelector('[data-action="delete"]').addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (this.terrain.layerManager.layers.length <= 1) {
+                    alert('至少保留一个图层');
+                    return;
+                }
+                if (confirm('确定要删除这个图层吗？')) {
+                    this.terrain.layerManager.deleteLayer(layer.id);
+                    this.history.pushState(this.terrain.cloneHeightMap());
+                }
+            });
+
+            item.querySelector('.layer-opacity-slider').addEventListener('input', (e) => {
+                layer.opacity = parseFloat(e.target.value);
+                item.querySelector('.opacity-value').textContent = layer.opacity.toFixed(2);
+                this.terrain.layerManager._notifyChanged();
+            });
+
+            item.querySelector('.layer-blend-select').addEventListener('change', (e) => {
+                layer.blendMode = e.target.value;
+                this.terrain.layerManager._notifyChanged();
+                this.history.pushState(this.terrain.cloneHeightMap());
+            });
+
+            container.appendChild(item);
+        });
+    }
+
+    setupMacros() {
+        document.getElementById('macro-record').addEventListener('click', () => {
+            this.startMacroRecording();
+        });
+
+        document.getElementById('macro-stop').addEventListener('click', () => {
+            this.stopMacroRecording();
+        });
+
+        document.getElementById('macro-speed').addEventListener('change', (e) => {
+            this.macroManager.setPlaybackSpeed(parseFloat(e.target.value));
+        });
+
+        this.setupSlider('macro-offsetx', (val) => {
+            this.macroManager.transform.offsetX = parseFloat(val);
+        });
+
+        this.setupSlider('macro-offsetz', (val) => {
+            this.macroManager.transform.offsetZ = parseFloat(val);
+        });
+
+        this.setupSlider('macro-rotation', (val) => {
+            this.macroManager.transform.rotation = parseFloat(val);
+        });
+
+        document.getElementById('macro-play').addEventListener('click', () => {
+            if (this.currentSelectedMacro) {
+                this.playMacro(this.currentSelectedMacro);
+            }
+        });
+
+        document.getElementById('macro-pause').addEventListener('click', () => {
+            if (this.macroManager.isPaused) {
+                this.macroManager.resumePlayback();
+            } else {
+                this.macroManager.pausePlayback();
+            }
+        });
+
+        document.getElementById('macro-stop-playback').addEventListener('click', () => {
+            this.macroManager.stopPlayback();
+        });
+
+        this.macroManager.on('recordingStarted', () => {
+            document.getElementById('macro-record').disabled = true;
+            document.getElementById('macro-record').classList.add('recording');
+            document.getElementById('macro-stop').disabled = false;
+        });
+
+        this.macroManager.on('recordingStopped', (macro) => {
+            document.getElementById('macro-record').disabled = false;
+            document.getElementById('macro-record').classList.remove('recording');
+            document.getElementById('macro-stop').disabled = true;
+            
+            if (macro && macro.operations.length > 0) {
+                this.showModal({
+                    title: '保存宏',
+                    placeholder: '请输入宏名称',
+                    defaultValue: `宏 ${this.macroManager.getMacros().length + 1}`,
+                    onConfirm: (name) => {
+                        if (name && name.trim()) {
+                            this.macroManager.saveMacro(macro, name.trim());
+                            this.renderMacros();
+                        }
+                    }
+                });
+            }
+        });
+
+        this.macroManager.on('playbackStarted', () => {
+            document.getElementById('macro-play').disabled = true;
+            document.getElementById('macro-pause').disabled = false;
+            document.getElementById('macro-stop-playback').disabled = false;
+        });
+
+        this.macroManager.on('playbackPaused', () => {
+            document.getElementById('macro-pause').textContent = '▶️ 继续';
+        });
+
+        this.macroManager.on('playbackResumed', () => {
+            document.getElementById('macro-pause').textContent = '⏸️ 暂停';
+        });
+
+        this.macroManager.on('playbackFinished', () => {
+            document.getElementById('macro-play').disabled = false;
+            document.getElementById('macro-pause').disabled = true;
+            document.getElementById('macro-stop-playback').disabled = true;
+            document.getElementById('macro-pause').textContent = '⏸️ 暂停';
+            this.brushIndicator.classList.remove('visible');
+        });
+
+        this.macroManager.on('playbackStopped', () => {
+            document.getElementById('macro-play').disabled = false;
+            document.getElementById('macro-pause').disabled = true;
+            document.getElementById('macro-stop-playback').disabled = true;
+            document.getElementById('macro-pause').textContent = '⏸️ 暂停';
+            this.brushIndicator.classList.remove('visible');
+        });
+
+        this.macroManager.on('playbackProgress', (data) => {
+            const worldX = (data.x - 0.5) * this.terrainSize;
+            const worldZ = (data.z - 0.5) * this.terrainSize;
+            const pos = new THREE.Vector3(worldX, 0, worldZ);
+            
+            const screenPos = this.worldToScreen(pos);
+            this.brushIndicator.classList.add('visible');
+            this.brushIndicator.style.left = screenPos.x + 'px';
+            this.brushIndicator.style.top = screenPos.y + 'px';
+        });
+    }
+
+    startMacroRecording() {
+        this.macroManager.startRecording();
+    }
+
+    stopMacroRecording() {
+        this.macroManager.stopRecording();
+    }
+
+    recordBrushOperation(brushType, x, z, size, strength, flattenHeight) {
+        const normalizedX = (x + this.terrainSize / 2) / this.terrainSize;
+        const normalizedZ = (z + this.terrainSize / 2) / this.terrainSize;
+        this.macroManager.recordOperation(brushType, normalizedX, normalizedZ, size, strength, flattenHeight);
+    }
+
+    playMacro(macro) {
+        this.history.pushState(this.terrain.cloneHeightMap());
+        
+        this.macroManager.playMacro(macro, (brushType, normX, normZ, size, strength, flattenHeight) => {
+            const worldX = (normX - 0.5) * this.terrainSize;
+            const worldZ = (normZ - 0.5) * this.terrainSize;
+            this.terrain.applyBrush(worldX, worldZ, brushType, size, strength, flattenHeight);
+        });
+    }
+
+    renderMacros() {
+        const container = document.getElementById('macro-list');
+        const macros = this.macroManager.getMacros();
+        container.innerHTML = '';
+
+        if (macros.length === 0) {
+            container.innerHTML = '<div class="empty-state">暂无录制的宏</div>';
+            return;
+        }
+
+        macros.forEach(macro => {
+            const item = document.createElement('div');
+            item.className = 'macro-item';
+            if (this.currentSelectedMacro && this.currentSelectedMacro.id === macro.id) {
+                item.style.borderColor = '#e94560';
+                item.style.background = 'rgba(233, 69, 96, 0.2)';
+            }
+            
+            const duration = macro.operations.length > 0 
+                ? (macro.operations[macro.operations.length - 1].timestamp / 1000).toFixed(1) 
+                : 0;
+            
+            item.innerHTML = `
+                <div class="macro-info">
+                    <div class="macro-name">${macro.name}</div>
+                    <div class="macro-meta">${macro.operations.length} 步 · ${duration}秒</div>
+                </div>
+                <div class="macro-actions">
+                    <button data-action="play" title="播放">▶️</button>
+                    <button data-action="rename" title="重命名">✏️</button>
+                    <button data-action="delete" title="删除">🗑️</button>
+                </div>
+            `;
+
+            item.addEventListener('click', (e) => {
+                if (e.target.tagName !== 'BUTTON') {
+                    this.currentSelectedMacro = macro;
+                    document.getElementById('macro-playback').style.display = 'block';
+                    this.renderMacros();
+                }
+            });
+
+            item.querySelector('[data-action="play"]').addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.currentSelectedMacro = macro;
+                document.getElementById('macro-playback').style.display = 'block';
+                this.playMacro(macro);
+                this.renderMacros();
+            });
+
+            item.querySelector('[data-action="rename"]').addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.showModal({
+                    title: '重命名宏',
+                    placeholder: '请输入新名称',
+                    defaultValue: macro.name,
+                    onConfirm: (name) => {
+                        if (name && name.trim()) {
+                            this.macroManager.renameMacro(macro.id, name.trim());
+                            this.renderMacros();
+                        }
+                    }
+                });
+            });
+
+            item.querySelector('[data-action="delete"]').addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (confirm('确定要删除这个宏吗？')) {
+                    this.macroManager.deleteMacro(macro.id);
+                    if (this.currentSelectedMacro && this.currentSelectedMacro.id === macro.id) {
+                        this.currentSelectedMacro = null;
+                        document.getElementById('macro-playback').style.display = 'none';
+                    }
+                    this.renderMacros();
+                }
+            });
+
+            container.appendChild(item);
+        });
+    }
+
     onMouseMove(event) {
         const rect = this.canvas.getBoundingClientRect();
         this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
@@ -1032,6 +1389,15 @@ class TerrainEditor {
                 this.brushStrength,
                 this.flattenHeight
             );
+            if (this.macroManager.isRecording) {
+                this.recordBrushOperation(
+                    this.currentBrush,
+                    position.x, position.z,
+                    this.brushSize,
+                    this.brushStrength,
+                    this.flattenHeight
+                );
+            }
             this.lastBrushPos = position.clone();
             return;
         }
@@ -1051,6 +1417,15 @@ class TerrainEditor {
                     this.brushStrength,
                     this.flattenHeight
                 );
+                if (this.macroManager.isRecording) {
+                    this.recordBrushOperation(
+                        this.currentBrush,
+                        interpolatedPos.x, interpolatedPos.z,
+                        this.brushSize,
+                        this.brushStrength,
+                        this.flattenHeight
+                    );
+                }
             }
             this.lastBrushPos = position.clone();
         } else {
@@ -1061,6 +1436,15 @@ class TerrainEditor {
                 this.brushStrength,
                 this.flattenHeight
             );
+            if (this.macroManager.isRecording) {
+                this.recordBrushOperation(
+                    this.currentBrush,
+                    position.x, position.z,
+                    this.brushSize,
+                    this.brushStrength,
+                    this.flattenHeight
+                );
+            }
         }
     }
 

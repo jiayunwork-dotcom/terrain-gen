@@ -1,12 +1,13 @@
 import * as THREE from 'three';
 import Noise from './noise.js';
+import { LayerManager } from './layers.js';
 
 class TerrainGenerator {
     constructor(size = 512, resolution = 256) {
         this.size = size;
         this.resolution = resolution;
         this.noise = new Noise(12345);
-        this.heightMap = null;
+        this.layerManager = new LayerManager(resolution);
         this.geometry = null;
         this.mesh = null;
         this.material = null;
@@ -28,6 +29,21 @@ class TerrainGenerator {
             sandHeight: -10,
             blendRange: 10
         };
+    }
+
+    get heightMap() {
+        return this.layerManager.combineLayers();
+    }
+
+    set heightMap(value) {
+        if (this.layerManager.layers.length === 0) {
+            this.layerManager.createLayer('基础图层', value);
+        } else {
+            const activeLayer = this.layerManager.getActiveLayer();
+            if (activeLayer) {
+                activeLayer.heightMap = new Float32Array(value);
+            }
+        }
     }
 
     generateHeightMap() {
@@ -55,7 +71,14 @@ class TerrainGenerator {
             }
         }
 
-        this.heightMap = heightMap;
+        if (this.layerManager.layers.length === 0) {
+            this.layerManager.createLayer('基础图层', heightMap);
+        } else {
+            const activeLayer = this.layerManager.getActiveLayer();
+            if (activeLayer) {
+                activeLayer.heightMap = heightMap;
+            }
+        }
         return heightMap;
     }
 
@@ -311,6 +334,9 @@ class TerrainGenerator {
     }
 
     setHeightAt(x, z, height) {
+        const activeLayer = this.layerManager.getActiveLayer();
+        if (!activeLayer || activeLayer.locked) return;
+        
         const halfSize = this.size / 2;
         const step = this.size / (this.resolution - 1);
         
@@ -318,17 +344,22 @@ class TerrainGenerator {
         const gridZ = Math.floor((z + halfSize) / step);
         
         if (gridX >= 0 && gridX < this.resolution && gridZ >= 0 && gridZ < this.resolution) {
-            this.heightMap[gridZ * this.resolution + gridX] = height;
+            activeLayer.heightMap[gridZ * this.resolution + gridX] = height;
         }
     }
 
     applyBrush(centerX, centerZ, brushType, size, strength, flattenHeight = 0) {
+        const activeLayer = this.layerManager.getActiveLayer();
+        if (!activeLayer || activeLayer.locked) return;
+        
         const halfSize = this.size / 2;
         const step = this.size / (this.resolution - 1);
         
         const gridSize = Math.ceil(size / step);
         const centerGridX = Math.floor((centerX + halfSize) / step);
         const centerGridZ = Math.floor((centerZ + halfSize) / step);
+        
+        const layerHeightMap = activeLayer.heightMap;
         
         for (let dz = -gridSize; dz <= gridSize; dz++) {
             for (let dx = -gridSize; dx <= gridSize; dx++) {
@@ -354,7 +385,7 @@ class TerrainGenerator {
                 const weight = smoothFalloff * strength * 0.1;
                 
                 const idx = gridZ * this.resolution + gridX;
-                let height = this.heightMap[idx];
+                let height = layerHeightMap[idx];
                 
                 switch (brushType) {
                     case 'raise':
@@ -376,7 +407,7 @@ class TerrainGenerator {
                         break;
                 }
                 
-                this.heightMap[idx] = height;
+                layerHeightMap[idx] = height;
             }
         }
         
@@ -384,11 +415,23 @@ class TerrainGenerator {
     }
 
     cloneHeightMap() {
-        return new Float32Array(this.heightMap);
+        return this.layerManager.toJSON();
     }
 
-    restoreHeightMap(heightMap) {
-        this.heightMap = new Float32Array(heightMap);
+    restoreHeightMap(state) {
+        if (state instanceof Float32Array) {
+            if (this.layerManager.layers.length === 0) {
+                this.layerManager.createLayer('基础图层', state);
+            } else {
+                const activeLayer = this.layerManager.getActiveLayer();
+                if (activeLayer) {
+                    activeLayer.heightMap = new Float32Array(state);
+                }
+            }
+        } else if (state && state.layers) {
+            const manager = LayerManager.fromJSON(state);
+            this.layerManager = manager;
+        }
         this.updateGeometryFromHeightMap();
     }
 

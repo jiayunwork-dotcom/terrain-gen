@@ -117,6 +117,62 @@
             </div>
             
             <div class="panel-section">
+                <div class="section-title" data-section="layers">
+                    <span>📚 地形图层</span>
+                    <span class="arrow">▶</span>
+                </div>
+                <div class="section-content" id="layers-panel" style="display:none;">
+                    <div class="layer-controls">
+                        <button id="add-layer-blank">➕ 新建空白</button>
+                        <button id="add-layer-copy">📋 复制当前</button>
+                    </div>
+                    <div class="layer-list" id="layer-list"></div>
+                </div>
+            </div>
+            
+            <div class="panel-section">
+                <div class="section-title" data-section="macros">
+                    <span>🎬 笔刷宏</span>
+                    <span class="arrow">▶</span>
+                </div>
+                <div class="section-content" id="macros-panel" style="display:none;">
+                    <div class="macro-controls">
+                        <button id="macro-record" class="record-btn">⏺️ 录制</button>
+                        <button id="macro-stop" disabled>⏹️ 停止</button>
+                    </div>
+                    <div class="macro-playback" id="macro-playback" style="display:none;">
+                        <div class="control-group">
+                            <label>回放速度</label>
+                            <select id="macro-speed">
+                                <option value="0.5">0.5x</option>
+                                <option value="1" selected>1x</option>
+                                <option value="2">2x</option>
+                                <option value="4">4x</option>
+                            </select>
+                        </div>
+                        <div class="control-group">
+                            <label>X偏移: <span id="macro-offsetx-value">0</span></label>
+                            <input type="range" id="macro-offsetx" min="-0.5" max="0.5" step="0.01" value="0">
+                        </div>
+                        <div class="control-group">
+                            <label>Z偏移: <span id="macro-offsetz-value">0</span></label>
+                            <input type="range" id="macro-offsetz" min="-0.5" max="0.5" step="0.01" value="0">
+                        </div>
+                        <div class="control-group">
+                            <label>旋转: <span id="macro-rotation-value">0</span>°</label>
+                            <input type="range" id="macro-rotation" min="-180" max="180" value="0">
+                        </div>
+                        <div class="macro-playback-controls">
+                            <button id="macro-play">▶️ 播放</button>
+                            <button id="macro-pause" disabled>⏸️ 暂停</button>
+                            <button id="macro-stop-playback" disabled>⏹️ 停止</button>
+                        </div>
+                    </div>
+                    <div class="macro-list" id="macro-list"></div>
+                </div>
+            </div>
+            
+            <div class="panel-section">
                 <div class="section-title" data-section="textures">
                     <span>🎨 纹理设置</span>
                     <span class="arrow">▼</span>
