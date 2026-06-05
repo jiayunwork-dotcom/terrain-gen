@@ -1,0 +1,16 @@
+{
+  "name": "terrain-generator",
+  "version": "1.0.0",
+  "description": "3D Procedural Terrain Generator and Editor",
+  "main": "index.html",
+  "scripts": {
+    "dev": "npx http-server -p 8080 -c-1",
+    "start": "npx http-server -p 8080 -c-1"
+  },
+  "keywords": ["terrain", "webgl", "threejs", "procedural"],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "http-server": "^14.1.1"
+  }
+}

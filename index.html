@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D 程序化地形生成器</title>
+    <link rel="stylesheet" href="css/style.css">
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+</head>
+<body>
+    <div id="app">
+        <div id="toolbar">
+            <div class="toolbar-header">
+                <h1>🏔️ 地形生成器</h1>
+            </div>
+            
+            <div class="panel-section">
+                <div class="section-title" data-section="generation">
+                    <span>⚙️ 生成参数</span>
+                    <span class="arrow">▼</span>
+                </div>
+                <div class="section-content" id="generation-panel">
+                    <div class="control-group">
+                        <label>噪声类型</label>
+                        <select id="noise-type">
+                            <option value="perlin">Perlin 噪声</option>
+                            <option value="simplex">Simplex 噪声</option>
+                            <option value="ridged">Ridged 多重分形</option>
+                        </select>
+                    </div>
+                    <div class="control-group">
+                        <label>倍频数量: <span id="octaves-value">6</span></label>
+                        <input type="range" id="octaves" min="1" max="10" value="6">
+                    </div>
+                    <div class="control-group">
+                        <label>基础频率: <span id="frequency-value">0.02</span></label>
+                        <input type="range" id="frequency" min="0.005" max="0.1" step="0.001" value="0.02">
+                    </div>
+                    <div class="control-group">
+                        <label>基础振幅: <span id="amplitude-value">50</span></label>
+                        <input type="range" id="amplitude" min="10" max="200" value="50">
+                    </div>
+                    <div class="control-group">
+                        <label>Lacunarity: <span id="lacunarity-value">2.0</span></label>
+                        <input type="range" id="lacunarity" min="1.5" max="4" step="0.1" value="2.0">
+                    </div>
+                    <div class="control-group">
+                        <label>Persistence: <span id="persistence-value">0.5</span></label>
+                        <input type="range" id="persistence" min="0.1" max="0.9" step="0.05" value="0.5">
+                    </div>
+                    <div class="control-group">
+                        <label>随机种子</label>
+                        <div class="row-controls">
+                            <input type="number" id="seed" value="12345">
+                            <button id="random-seed">🎲</button>
+                        </div>
+                    </div>
+                    <button id="regenerate" class="primary-btn">🔄 重新生成</button>
+                </div>
+            </div>
+            
+            <div class="panel-section">
+                <div class="section-title" data-section="brushes">
+                    <span>🖌️ 笔刷工具</span>
+                    <span class="arrow">▼</span>
+                </div>
+                <div class="section-content" id="brushes-panel">
+                    <div class="brush-buttons">
+                        <button class="brush-btn active" data-brush="raise">⬆️ 抬高</button>
+                        <button class="brush-btn" data-brush="lower">⬇️ 降低</button>
+                        <button class="brush-btn" data-brush="flatten">➖ 平整</button>
+                        <button class="brush-btn" data-brush="erode">💧 侵蚀</button>
+                        <button class="brush-btn" data-brush="noise">✨ 噪声</button>
+                    </div>
+                    <div class="control-group">
+                        <label>笔刷大小: <span id="brush-size-value">10</span></label>
+                        <input type="range" id="brush-size" min="1" max="50" value="10">
+                    </div>
+                    <div class="control-group">
+                        <label>笔刷强度: <span id="brush-strength-value">0.5</span></label>
+                        <input type="range" id="brush-strength" min="0.1" max="2" step="0.1" value="0.5">
+                    </div>
+                    <div class="control-group" id="flatten-height-group" style="display:none;">
+                        <label>平整高度: <span id="flatten-height-value">0</span></label>
+                        <input type="range" id="flatten-height" min="-100" max="100" value="0">
+                    </div>
+                    <div class="brush-undo-redo">
+                        <button id="undo-btn">↩️ 撤销</button>
+                        <button id="redo-btn">↪️ 重做</button>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="panel-section">
+                <div class="section-title" data-section="textures">
+                    <span>🎨 纹理设置</span>
+                    <span class="arrow">▼</span>
+                </div>
+                <div class="section-content" id="textures-panel">
+                    <div class="control-group">
+                        <label>草地高度上限: <span id="grass-height-value">20</span></label>
+                        <input type="range" id="grass-height" min="-50" max="100" value="20">
+                    </div>
+                    <div class="control-group">
+                        <label>岩石坡度阈值: <span id="rock-slope-value">0.6</span></label>
+                        <input type="range" id="rock-slope" min="0.1" max="1" step="0.05" value="0.6">
+                    </div>
+                    <div class="control-group">
+                        <label>雪地高度下限: <span id="snow-height-value">60</span></label>
+                        <input type="range" id="snow-height" min="0" max="150" value="60">
+                    </div>
+                    <div class="control-group">
+                        <label>沙漠高度上限: <span id="sand-height-value">-10</span></label>
+                        <input type="range" id="sand-height" min="-80" max="20" value="-10">
+                    </div>
+                    <div class="control-group">
+                        <label>纹理混合范围: <span id="blend-range-value">10</span></label>
+                        <input type="range" id="blend-range" min="1" max="30" value="10">
+                    </div>
+                </div>
+            </div>
+            
+            <div class="panel-section">
+                <div class="section-title" data-section="water">
+                    <span>🌊 水体设置</span>
+                    <span class="arrow">▼</span>
+                </div>
+                <div class="section-content" id="water-panel">
+                    <div class="control-group">
+                        <label>启用水体</label>
+                        <input type="checkbox" id="water-enabled" checked>
+                    </div>
+                    <div class="control-group">
+                        <label>海平面高度: <span id="water-level-value">5</span></label>
+                        <input type="range" id="water-level" min="-50" max="50" value="5">
+                    </div>
+                    <div class="control-group">
+                        <label>波浪强度: <span id="wave-strength-value">0.5</span></label>
+                        <input type="range" id="wave-strength" min="0" max="2" step="0.1" value="0.5">
+                    </div>
+                    <div class="control-group">
+                        <label>水体透明度: <span id="water-opacity-value">0.8</span></label>
+                        <input type="range" id="water-opacity" min="0.1" max="1" step="0.05" value="0.8">
+                    </div>
+                </div>
+            </div>
+            
+            <div class="panel-section">
+                <div class="section-title" data-section="vegetation">
+                    <span>🌲 植被设置</span>
+                    <span class="arrow">▼</span>
+                </div>
+                <div class="section-content" id="vegetation-panel">
+                    <div class="control-group">
+                        <label>启用植被</label>
+                        <input type="checkbox" id="vegetation-enabled" checked>
+                    </div>
+                    <div class="control-group">
+                        <label>树木密度: <span id="tree-density-value">0.3</span></label>
+                        <input type="range" id="tree-density" min="0" max="1" step="0.05" value="0.3">
+                    </div>
+                    <div class="control-group">
+                        <label>草丛密度: <span id="grass-density-value">0.5</span></label>
+                        <input type="range" id="grass-density" min="0" max="1" step="0.05" value="0.5">
+                    </div>
+                    <div class="control-group">
+                        <label>最大海拔: <span id="veg-max-height-value">50</span></label>
+                        <input type="range" id="veg-max-height" min="0" max="100" value="50">
+                    </div>
+                    <div class="control-group">
+                        <label>最大坡度: <span id="veg-max-slope-value">0.5</span></label>
+                        <input type="range" id="veg-max-slope" min="0.1" max="1" step="0.05" value="0.5">
+                    </div>
+                    <button id="regenerate-veg">🔄 重新生成植被</button>
+                </div>
+            </div>
+            
+            <div class="panel-section">
+                <div class="section-title" data-section="atmosphere">
+                    <span>☀️ 大气设置</span>
+                    <span class="arrow">▼</span>
+                </div>
+                <div class="section-content" id="atmosphere-panel">
+                    <div class="control-group">
+                        <label>时间: <span id="time-value">12:00</span></label>
+                        <input type="range" id="time-slider" min="0" max="24" step="0.5" value="12">
+                    </div>
+                    <div class="control-group">
+                        <label>雾浓度: <span id="fog-density-value">0.005</span></label>
+                        <input type="range" id="fog-density" min="0" max="0.02" step="0.001" value="0.005">
+                    </div>
+                    <div class="control-group">
+                        <label>太阳强度: <span id="sun-intensity-value">1.0</span></label>
+                        <input type="range" id="sun-intensity" min="0.2" max="2" step="0.1" value="1.0">
+                    </div>
+                </div>
+            </div>
+            
+            <div class="panel-section">
+                <div class="section-title" data-section="lod">
+                    <span>📐 LOD设置</span>
+                    <span class="arrow">▶</span>
+                </div>
+                <div class="section-content" id="lod-panel" style="display:none;">
+                    <div class="control-group">
+                        <label>启用LOD</label>
+                        <input type="checkbox" id="lod-enabled">
+                    </div>
+                    <div class="control-group">
+                        <label>LOD距离: <span id="lod-distance-value">200</span></label>
+                        <input type="range" id="lod-distance" min="50" max="500" value="200">
+                    </div>
+                </div>
+            </div>
+            
+            <div class="panel-section">
+                <div class="section-title" data-section="export">
+                    <span>💾 导出</span>
+                    <span class="arrow">▼</span>
+                </div>
+                <div class="section-content" id="export-panel">
+                    <div class="control-group">
+                        <label>导出分辨率</label>
+                        <select id="export-resolution">
+                            <option value="128">128 x 128</option>
+                            <option value="256" selected>256 x 256</option>
+                            <option value="512">512 x 512</option>
+                            <option value="1024">1024 x 1024</option>
+                        </select>
+                    </div>
+                    <button id="export-heightmap">📊 导出高度图 (PNG)</button>
+                    <button id="export-obj">📦 导出网格 (OBJ)</button>
+                </div>
+            </div>
+        </div>
+        
+        <div id="viewport">
+            <canvas id="canvas"></canvas>
+            <div id="brush-indicator"></div>
+        </div>
+        
+        <div id="statusbar">
+            <div class="status-item">
+                <span class="status-label">FPS:</span>
+                <span id="fps-value" class="status-value">60</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">三角面:</span>
+                <span id="triangles-value" class="status-value">0</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">顶点:</span>
+                <span id="vertices-value" class="status-value">0</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">植被:</span>
+                <span id="vegetation-count-value" class="status-value">0</span>
+            </div>
+        </div>
+    </div>
+    
+    <script type="module" src="js/main.js"></script>
+</body>
+</html>
